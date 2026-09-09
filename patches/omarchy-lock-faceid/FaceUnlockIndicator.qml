@@ -50,8 +50,14 @@ Item {
   readonly property color surfaceColor: overDesktop ? Color.notifications.background : Color.lock.background
   readonly property color surfaceBorder: overDesktop ? Color.notifications.border : Color.lock.border
   readonly property color markColor: overDesktop ? Color.notifications.text : Color.lock.text
-  readonly property color ringColor: phase === "success" ? Color.accent
-    : (phase === "failure" ? (overDesktop ? Color.urgent : Color.lock.textError) : markColor)
+  //: The phase the pill is *wearing*, which lags `phase` on the way out. The
+  //: caller drops straight to "hidden" while the pill is still fading, and
+  //: anything bound live to `phase` would swap the verdict back to the
+  //: scanning face for the length of that fade — a tick, then a face, then
+  //: nothing. The pill leaves showing whatever it settled on.
+  property string litPhase: "scanning"
+  readonly property color ringColor: litPhase === "success" ? Color.accent
+    : (litPhase === "failure" ? (overDesktop ? Color.urgent : Color.lock.textError) : markColor)
 
   // --- footprints ---------------------------------------------------------
   //
@@ -146,6 +152,7 @@ Item {
     }
     // A verdict must never leave the previous scan's face on screen.
     if (!scanning) hasPreview = false
+    if (phase !== "hidden") litPhase = phase
     if (phase === "failure") shake.restart()
     if (phase === "success") pop.restart()
     ring.requestPaint()
@@ -459,7 +466,7 @@ Item {
       Text {
         id: glyphText
         anchors.centerIn: parent
-        text: root.phase === "success" ? "󰄬" : (root.phase === "failure" ? "󰅖" : "󰱻")
+        text: root.litPhase === "success" ? "󰄬" : (root.litPhase === "failure" ? "󰅖" : "󰱻")
         color: root.ringColor
         font.family: Style.font.family
         font.pixelSize: Math.round(root.ringSize * 0.46)
