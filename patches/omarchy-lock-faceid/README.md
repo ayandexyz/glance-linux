@@ -49,15 +49,15 @@ from pill to capsule to circle as it grows and morphs.
 
 ## The Omarchy mark
 
-Taken from `logo.svg`, which Omarchy already ships at `$OMARCHY_PATH` — so
-there is nothing to download and it works offline.
+The square logo mark, taken from `icon.png`, which Omarchy already ships at
+`$OMARCHY_PATH` — so there is nothing to download and it works offline.
 
-The shipped file is solid black on transparent, and no hue-based tint can move
-black anywhere. It is coloured instead by masking a rectangle of the current
-theme's own foreground with the logo's alpha, which means it follows a theme
-change with no per-theme asset. The brand page's pre-coloured variants
-(`omarchy-logo-rose-pine.svg` and friends) are pinned to one palette and would
-not do that.
+The shipped file is one flat colour on transparent, and no hue-based tint can
+move a flat colour anywhere. It is coloured instead by masking a rectangle of
+the current theme's own foreground with the mark's alpha, which means it
+follows a theme change with no per-theme asset. The brand page's pre-coloured
+variants (`omarchy-logo-rose-pine.svg` and friends) are pinned to one palette
+and would not do that.
 
 It holds the pill for 700 ms at the start of a scan — long enough to register,
 short enough that it is never standing between the user and their session —

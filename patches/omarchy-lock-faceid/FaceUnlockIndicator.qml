@@ -61,24 +61,24 @@ Item {
   // (upstream's note on `pillClosedSize`).
   readonly property real closedWidth: 92
   readonly property real closedHeight: 26
-  readonly property real markPanelWidth: 168
+  readonly property real markPanelWidth: 112
   readonly property real markPanelHeight: 64
   readonly property real ringPanelSize: 80
   readonly property real ringSize: 64
   readonly property real previewInset: 4
 
-  //: The mark's own aspect, from logo.svg's viewBox (1215 x 285).
-  readonly property real markHeight: 26
-  readonly property real markWidth: Math.round(markHeight * 1215 / 285)
+  //: The mark is square (icon.png is 300 x 300), so one number sizes it.
+  readonly property real markHeight: 40
+  readonly property real markWidth: markHeight
 
   readonly property string omarchyPath: {
     var fromEnv = Quickshell.env("OMARCHY_PATH")
     return fromEnv ? fromEnv : "/usr/share/omarchy"
   }
-  //: Shipped with Omarchy itself, in black on transparent, so it can be masked
-  //: to whatever the current theme's foreground happens to be rather than
-  //: pinned to one theme's palette.
-  readonly property string markUrl: "file://" + omarchyPath + "/logo.svg"
+  //: Shipped with Omarchy itself, a flat mark on transparent, so it can be
+  //: masked to whatever the current theme's foreground happens to be rather
+  //: than pinned to one theme's palette.
+  readonly property string markUrl: "file://" + omarchyPath + "/icon.png"
 
   // --- stages -------------------------------------------------------------
 
@@ -201,8 +201,8 @@ Item {
     // --- the Omarchy mark -------------------------------------------------
     //
     // Tinted by masking a rectangle of the theme's own foreground with the
-    // logo's alpha, rather than by recolouring the artwork: the shipped file
-    // is solid black, which no hue-based tint can move off black.
+    // mark's alpha, rather than by recolouring the artwork: the shipped file
+    // is one flat colour, which no hue-based tint can move off that colour.
     Item {
       id: mark
       anchors.centerIn: parent
@@ -235,7 +235,7 @@ Item {
       height: root.markHeight
       source: root.markUrl
       fillMode: Image.PreserveAspectFit
-      // Rendered at twice the drawn size so the vector stays crisp on a
+      // Rendered at twice the drawn size so the mark stays crisp on a
       // scaled output.
       sourceSize.width: root.markWidth * 2
       sourceSize.height: root.markHeight * 2
