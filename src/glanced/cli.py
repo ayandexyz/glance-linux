@@ -79,6 +79,18 @@ def _selftest(args: argparse.Namespace) -> int:
     return 0
 
 
+def _live(args: argparse.Namespace) -> int:
+    from .liveness import LivenessMode
+    from .livetest import run
+
+    return run(
+        mode=LivenessMode(args.mode),
+        device=args.device,
+        scan_seconds=args.scan_seconds,
+        preview=args.preview,
+    )
+
+
 def _status(args: argparse.Namespace) -> int:
     try:
         response = ipc.request(ipc.STATUS_SOCKET, "status")
@@ -118,6 +130,15 @@ def main(argv: list[str] | None = None) -> int:
         "--noise", type=float, default=0.5, help="landmark jitter in pixels (default: 0.5)"
     )
     selftest.set_defaults(func=_selftest)
+
+    live = subparsers.add_parser(
+        "live", help="run the liveness model against your webcam (no unlock, no recognition)"
+    )
+    live.add_argument("--mode", choices=["light", "heavy"], default="heavy")
+    live.add_argument("--device", default="/dev/video0")
+    live.add_argument("--scan-seconds", type=float, default=10.0)
+    live.add_argument("--preview", action="store_true", help="also show the camera window")
+    live.set_defaults(func=_live)
 
     status = subparsers.add_parser("status", help="query the running daemon")
     status.set_defaults(func=_status)
