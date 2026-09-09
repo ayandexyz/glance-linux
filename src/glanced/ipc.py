@@ -23,7 +23,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
 
-RUNTIME_DIR = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")) / "glance"
+RUNTIME_DIR = Path(
+    os.environ.get("GLANCE_RUNTIME_DIR")
+    or Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")) / "glance"
+)
 AUTH_SOCKET = RUNTIME_DIR / "auth.sock"
 STATUS_SOCKET = RUNTIME_DIR / "status.sock"
 

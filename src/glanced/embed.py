@@ -20,10 +20,12 @@ EMBEDDING_DIMENSIONS = 512
 class ArcFaceEmbedder:
     """Turns an aligned 112x112 RGB crop into a normalized 512-d embedding."""
 
-    def __init__(self, model_path: Path, providers: Optional[list[str]] = None) -> None:
+    def __init__(self, model_path: Optional[Path] = None, providers: Optional[list[str]] = None) -> None:
         import onnxruntime  # imported lazily so the liveness code stays importable without it
 
-        self.model_path = Path(model_path)
+        from . import paths
+
+        self.model_path = Path(model_path or paths.arcface_model())
         if not self.model_path.exists():
             raise FileNotFoundError(
                 f"ArcFace model not found at {self.model_path}. "

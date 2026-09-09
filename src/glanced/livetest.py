@@ -19,10 +19,9 @@ from typing import Optional
 
 import numpy as np
 
-from .camera import Camera, CameraConfig, render_crop, to_working_resolution
-from .landmarker import DEFAULT_TASK_PATH, Landmarker
+from .camera import Camera, CameraConfig
 from .liveness import DEFAULT_TUNING, LivenessAnalyzer, LivenessCue, LivenessMode
-from .liveness.features import extract
+from .scan import FaceProcessor
 
 BAR_WIDTH = 14
 GREEN, RED, YELLOW, DIM, BOLD, RESET = (
@@ -94,10 +93,11 @@ def run(
     mode: LivenessMode = LivenessMode.HEAVY,
     device: str = "/dev/video0",
     scan_seconds: float = 10.0,
-    task_path: Path = DEFAULT_TASK_PATH,
+    task_path: Optional[Path] = None,
     preview: bool = False,
 ) -> int:
-    landmarker = Landmarker(task_path)
+    # Recognition-free on purpose: nothing here can authorize anything.
+    processor = FaceProcessor(landmarker_task=task_path, embed=False)
     analyzer = LivenessAnalyzer()
     analyzer.mode_provider = lambda: mode
 
@@ -113,22 +113,9 @@ def run(
                 now = time.monotonic()
                 frame_times = [t for t in frame_times if now - t < 1.0] + [now]
 
-                working, scale = to_working_resolution(native)
-                face = landmarker.detect(working, int(now * 1000))
-
-                if face is not None:
-                    # The glare cue wants native-resolution detail, so the crop
-                    # is taken from the full frame, not the downscaled one.
-                    native_box = tuple(v / scale for v in face.bounding_box)
-                    frame = extract(
-                        face.mesh,
-                        face.bounding_box,
-                        frame_rgb=working,
-                        face_crop=render_crop(native, native_box),
-                        yaw=face.yaw,
-                        timestamp=now,
-                    )
-                    snapshot = analyzer.observe(frame)
+                observation = processor.process(native, now, want_embedding=False)
+                if observation is not None:
+                    snapshot = analyzer.observe(observation.liveness_frame)
                 else:
                     snapshot = analyzer.last_snapshot
 
@@ -138,7 +125,7 @@ def run(
                 if preview:
                     import cv2
 
-                    cv2.imshow("glance", cv2.cvtColor(working, cv2.COLOR_RGB2BGR))
+                    cv2.imshow("glance", cv2.cvtColor(native, cv2.COLOR_RGB2BGR))
                     cv2.waitKey(1)
 
                 decided = snapshot.decision.is_denied or snapshot.decision.is_confirmed
@@ -166,7 +153,7 @@ def run(
         pass
     finally:
         sys.stdout.write("\033[?25h\n")  # restore cursor
-        landmarker.close()
+        processor.close()
         if preview:
             import cv2
 

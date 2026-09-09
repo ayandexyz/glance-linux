@@ -45,6 +45,12 @@ class Outcome(Enum):
     NO_MATCH = "no_match"
     SPOOF_DENIED = "spoof_denied"
     TIMED_OUT = "timed_out"
+    #: No face was ever seen during the scan.
+    NO_FACE = "no_face"
+    #: The daemon has no decrypted enrollment in memory (`glancectl arm`).
+    NOT_ARMED = "not_armed"
+    #: Camera or model failure. Never an unlock; the reason says what broke.
+    ERROR = "error"
 
 
 @dataclass
@@ -77,6 +83,27 @@ class UnlockPipeline:
         self._started = time.monotonic()
         self._match = None
 
+    @property
+    def matched(self) -> bool:
+        """True once an identity has matched — after which the caller can stop
+        paying for embeddings and let liveness finish on its own."""
+        return self._match is not None
+
+    def expired(self) -> Optional[ScanResult]:
+        """The terminal result if the scan has run out of time, else None.
+
+        Split out from `observe` so a scan with *no face in frame* still ends:
+        `observe` is only ever called with a face, and a user who walked away
+        must not leave the camera open until the PAM conversation gives up.
+        """
+        if self._started is None or time.monotonic() - self._started <= self.scan_timeout:
+            return None
+        if self._match is None:
+            return ScanResult(Outcome.NO_MATCH, reason="No enrolled face matched.")
+        return ScanResult(
+            Outcome.TIMED_OUT, reason="Could not confirm a real face before the scan expired."
+        )
+
     def observe(
         self, liveness_frame: LivenessFrame, embedding: Optional[np.ndarray]
     ) -> ScanResult:
@@ -104,11 +131,4 @@ class UnlockPipeline:
             identity, score = self._match
             return ScanResult(Outcome.UNLOCKED, identity=identity, similarity=score)
 
-        if time.monotonic() - self._started > self.scan_timeout:
-            if self._match is None:
-                return ScanResult(Outcome.NO_MATCH, reason="No enrolled face matched.")
-            return ScanResult(
-                Outcome.TIMED_OUT, reason="Could not confirm a real face before the scan expired."
-            )
-
-        return ScanResult(Outcome.PENDING)
+        return self.expired() or ScanResult(Outcome.PENDING)

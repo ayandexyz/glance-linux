@@ -39,24 +39,49 @@ convenience feature, not a security upgrade.
 
 | Piece | State |
 |---|---|
-| Liveness model (`src/glanced/liveness/`) | **Complete, ported, 36 tests passing** |
+| Liveness model (`src/glanced/liveness/`) | **Complete, ported, tested** |
 | Geometry / homography | Complete |
 | Enrollment store (AES-256-GCM) | Complete |
-| Alignment + ArcFace embedding | Complete, needs the ONNX model file |
-| IPC, session locking, service | Complete |
-| Camera capture loop | Scaffold — one seam left open in `daemon._detect` |
-| `pam_glance` | Not started |
-| Omarchy Quattro plugin | Not started |
+| Alignment + ArcFace embedding | Complete |
+| Camera capture, landmarking, scan loop | Complete |
+| Daemon: sockets, arming, status | Complete, tested |
+| `glancectl` (enroll, arm, authenticate, status, live, selftest) | Complete |
+| `pam_glance` | Written, builds; **not installed by anything** — see `pam/README.md` |
+| Omarchy plugin (`plugin/`) | Bar widget + panel — see `plugin/README.md` |
+
+## Setup
 
 ```bash
-python -m venv .venv && .venv/bin/pip install -e '.[dev]'
-.venv/bin/python -m pytest          # 36 passed
-PYTHONPATH=src .venv/bin/python -m glanced.cli selftest --mode heavy
+python -m venv .venv && .venv/bin/pip install -e '.[runtime,dev]'
+.venv/bin/python -m pytest                   # no camera needed
+.venv/bin/glancectl fetch-model              # ~3MB landmarker + ~13MB ArcFace
+.venv/bin/glancectl live --mode heavy        # liveness against your webcam, no unlock
 ```
+
+Then the real thing:
+
+```bash
+packaging/install.sh                         # user service + plugin symlink
+glancectl enroll --name "$USER" --remember   # 5 captures, sets the passphrase
+glancectl status
+glancectl authenticate                       # one full scan: recognition + liveness
+```
+
+`enroll` asks for a passphrase the first time; it encrypts the embeddings at
+rest. The daemon starts *disarmed* and cannot scan until it has that
+passphrase: either `glancectl arm` after each login, or `--remember`, which
+stores it 0600 under `~/.local/share/glance/` so the daemon arms itself. That
+is a convenience/at-rest trade-off you make explicitly.
+
+`glancectl authenticate` sends exactly the request `pam_glance` sends, so the
+whole unlock path can be exercised without touching PAM. Wiring PAM itself is
+the one step nothing automates — read `pam/README.md` and keep a root shell
+open.
 
 `glancectl selftest` is the counterpart of Glance's hidden Face Lab: it drives
 the real decision logic against synthetic faces and prints every cue's reading
-and fire count, with no camera involved.
+and fire count, with no camera involved. `glancectl live` does the same against
+real frames.
 
 ## The liveness model
 
@@ -141,9 +166,9 @@ Each is documented at its own site; the significant ones:
 ## Architecture
 
 ```
-daemon/  glanced        camera -> landmarks -> {ArcFace embed, liveness} -> verdict
-pam/     pam_glance.so  talks to the daemon over a 0600 unix socket   [not started]
-plugin/  Omarchy Quattro QML: the pill overlay, status, enrollment    [not started]
+src/glanced/   glanced        camera -> landmarks -> {ArcFace embed, liveness} -> verdict
+pam/           pam_glance.so  talks to the daemon over a 0600 unix socket
+plugin/        Omarchy QML    bar widget + panel: status, arm/disarm, test scan
 ```
 
 Unlock lives in PAM, in `hyprlock`'s stack, and works whether or not the shell

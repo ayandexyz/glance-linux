@@ -7,18 +7,14 @@ real anti-spoof head — does not reach into the liveness code at all.
 
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
 import numpy as np
 
+from . import paths
 from .liveness.features import yaw_from_transformation_matrix
-
-DEFAULT_TASK_PATH = Path(
-    os.environ.get("GLANCE_LANDMARKER_TASK", Path(__file__).resolve().parents[2] / "models" / "face_landmarker.task")
-)
 
 #: The five points ArcFace alignment expects, as FaceMesh indices:
 #: left eye centre, right eye centre, nose tip, left mouth corner, right mouth
@@ -45,16 +41,14 @@ class DetectedFace:
 
 
 class Landmarker:
-    def __init__(self, task_path: Path = DEFAULT_TASK_PATH, num_faces: int = 1) -> None:
+    def __init__(self, task_path: Optional[Path] = None, num_faces: int = 1) -> None:
         from mediapipe.tasks.python import BaseOptions, vision
 
-        self.task_path = Path(task_path)
+        self.task_path = Path(task_path or paths.landmarker_task())
         if not self.task_path.exists():
             raise FileNotFoundError(
-                f"face_landmarker.task not found at {self.task_path}.\n"
-                "Download it with:\n"
-                "  curl -L -o models/face_landmarker.task https://storage.googleapis.com/"
-                "mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task"
+                f"face_landmarker.task not found at {self.task_path}. "
+                "Fetch it with `glancectl fetch-model`."
             )
         self._landmarker = vision.FaceLandmarker.create_from_options(
             vision.FaceLandmarkerOptions(
