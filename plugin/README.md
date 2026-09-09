@@ -6,9 +6,10 @@ the `glanced` face-unlock daemon.
 - **Bar icon** shows the face-recognition glyph; it lights while a scan is in
   flight, including a scan started from the lock screen. Right-click runs a
   test scan.
-- **Panel** shows whether the daemon is armed, who is enrolled, what the last
-  scan decided and why, and the one command you need next when it cannot scan
-  yet. Inline **Arm** takes the passphrase (over stdin, never argv) and can
+- **Panel** shows whether the daemon is armed, who is enrolled, how the lock
+  screen is wired (on Enter, hands-free, or not yet), what the last scan
+  decided and why, and the one command you need next when something is
+  missing. Inline **Arm** takes the passphrase (over stdin, never argv) and can
   remember it so the daemon arms itself at login. **Disarm** and **Test scan**
   are one click each.
 

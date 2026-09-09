@@ -158,7 +158,8 @@ Ui.Panel {
               var missing = GlanceLogic.missingModels(root.status)
               if (missing.length > 0) return "Models not downloaded: " + missing.join(", ") + "."
               if (!root.status.enrolled) return "No face enrolled yet."
-              return "Enrollment is encrypted; the daemon needs the passphrase to scan."
+              if (!root.status.armed) return "Enrollment is encrypted; the daemon needs the passphrase to scan."
+              return "The lock screen is not wired to the daemon yet. Run this in a terminal (it uses sudo):"
             }
             color: root.foreground
             wrapMode: Text.WordWrap
@@ -250,6 +251,29 @@ Ui.Panel {
               font.family: root.fontFamily
               font.pixelSize: Style.font.bodySmall
             }
+          }
+        }
+
+        // How the lock screen reaches the daemon.
+        Column {
+          width: parent.width
+          spacing: Style.spacing.xs
+          visible: GlanceLogic.lockLabel(root.status) !== ""
+
+          Ui.PanelSectionHeader {
+            width: parent.width
+            text: "Lock screen"
+            foreground: root.foreground
+            fontFamily: root.fontFamily
+          }
+
+          Text {
+            width: parent.width
+            text: GlanceLogic.lockLabel(root.status)
+            color: root.status && root.status.pam && root.status.pam.wired === true ? root.foreground : root.dim
+            wrapMode: Text.WordWrap
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.bodySmall
           }
         }
 

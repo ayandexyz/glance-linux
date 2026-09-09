@@ -31,6 +31,7 @@ function parseStatus(text) {
     mode: String(parsed.mode || ""),
     camera: String(parsed.camera || ""),
     models: parsed.models && typeof parsed.models === "object" ? parsed.models : {},
+    pam: parsed.pam && typeof parsed.pam === "object" ? parsed.pam : null,
     identities: listOrEmpty(parsed.identities),
     lastScan: parsed.lastScan && typeof parsed.lastScan === "object" ? parsed.lastScan : null
   }
@@ -86,7 +87,22 @@ function nextStep(status) {
   if (missingModels(status).length > 0) return "glancectl fetch-model"
   if (!status.enrolled) return "glancectl enroll --name \"$USER\" --remember"
   if (!status.armed) return "glancectl arm"
+  if (status.pam && status.pam.wired !== true) return "glancectl setup-pam"
   return ""
+}
+
+// How the lock screen reaches the daemon, if at all. Null pam block: an older
+// glancectl that does not report it, so say nothing rather than "not wired".
+function lockLabel(status) {
+  if (!status || !status.pam) return ""
+  var pam = status.pam
+  if (pam.module !== true) return "Module not installed"
+  if (pam.shellFingerprint === true) return "Hands-free at lock"
+  var stacks = []
+  if (pam.shellPassword === true) stacks.push("shell lock")
+  if (pam.hyprlock === true) stacks.push("hyprlock")
+  if (stacks.length > 0) return "On Enter · " + stacks.join(", ")
+  return "Not wired"
 }
 
 function identityLine(identity) {

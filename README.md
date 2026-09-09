@@ -46,7 +46,7 @@ convenience feature, not a security upgrade.
 | Camera capture, landmarking, scan loop | Complete |
 | Daemon: sockets, arming, status | Complete, tested |
 | `glancectl` (enroll, arm, authenticate, status, live, selftest) | Complete |
-| `pam_glance` | Written, builds; **not installed by anything** — see `pam/README.md` |
+| `pam_glance` + `glancectl setup-pam` | Complete — see `pam/README.md` |
 | Omarchy plugin (`plugin/`) | Bar widget + panel — see `plugin/README.md` |
 
 ## Setup
@@ -63,9 +63,14 @@ Then the real thing:
 ```bash
 packaging/install.sh                         # user service + plugin symlink
 glancectl enroll --name "$USER" --remember   # 5 captures, sets the passphrase
-glancectl status
 glancectl authenticate                       # one full scan: recognition + liveness
+glancectl setup-pam                          # wire the lock screen (sudo; keep a root shell open)
+omarchy plugin enable ayande.glance          # the bar widget
 ```
+
+Lock the screen, press Enter (shell lock: any character then Enter), look at
+the camera. `pam/README.md` explains the two lock screens Omarchy has had, the
+on-demand vs `--hands-free` choice, and how to undo it.
 
 `enroll` asks for a passphrase the first time; it encrypts the embeddings at
 rest. The daemon starts *disarmed* and cannot scan until it has that
@@ -74,9 +79,20 @@ stores it 0600 under `~/.local/share/glance/` so the daemon arms itself. That
 is a convenience/at-rest trade-off you make explicitly.
 
 `glancectl authenticate` sends exactly the request `pam_glance` sends, so the
-whole unlock path can be exercised without touching PAM. Wiring PAM itself is
-the one step nothing automates — read `pam/README.md` and keep a root shell
-open.
+whole unlock path can be exercised without touching PAM.
+
+### What a plugin can and cannot do
+
+The Omarchy plugin is QML and runs inside the shell; it can draw status and
+run commands as you. It cannot install a PAM module, edit `/etc/pam.d`, or
+ship a Python daemon. So "install the plugin and face unlock works" is not a
+thing any marketplace plugin can deliver on its own. The intended shape is:
+
+1. a package (AUR `glanced`) that installs `glancectl`, the daemon service,
+   and `pam_glance.so`;
+2. one `glancectl enroll` and one `glancectl setup-pam` (the sudo step);
+3. the plugin, which shows the state, tells you which of those is missing,
+   and offers arm, disarm and test-scan.
 
 `glancectl selftest` is the counterpart of Glance's hidden Face Lab: it drives
 the real decision logic against synthetic faces and prints every cue's reading

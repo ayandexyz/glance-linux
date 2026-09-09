@@ -14,7 +14,7 @@ case $cmd in
       echo '{"schemaVersion": 1, "reachable": false, "error": "daemon not reachable", "armed": false, "scanning": false, "enrolled": true, "models": {"landmarker": true, "arcface": true}, "identities": [], "lastScan": null}'
       exit 1
     fi
-    echo '{"schemaVersion": 1, "reachable": true, "armed": true, "mode": "light", "scanning": false, "enrolled": true, "remembered": false, "camera": "/dev/video0", "models": {"landmarker": true, "arcface": true}, "identities": [{"name": "tester", "enabled": true, "captures": 5}], "lastScan": {"outcome": "unlocked", "identity": "tester", "similarity": 0.7, "reason": null, "at": 1700000000, "duration": 1.2}}'
+    echo '{"schemaVersion": 1, "reachable": true, "armed": true, "mode": "light", "scanning": false, "enrolled": true, "remembered": false, "camera": "/dev/video0", "models": {"landmarker": true, "arcface": true}, "pam": {"module": true, "hyprlock": false, "shellPassword": true, "shellFingerprint": false, "wired": true}, "identities": [{"name": "tester", "enabled": true, "captures": 5}], "lastScan": {"outcome": "unlocked", "identity": "tester", "similarity": 0.7, "reason": null, "at": 1700000000, "duration": 1.2}}'
     ;;
   authenticate)
     echo '{"outcome": "unlocked", "identity": "tester", "similarity": 0.7, "reason": null}'

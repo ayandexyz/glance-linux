@@ -9,7 +9,7 @@ const assert = require("assert")
 
 const source = fs.readFileSync(path.join(__dirname, "..", "GlanceLogic.js"), "utf8")
   .replace(/^\.pragma library\s*$/m, "")
-const G = vm.runInNewContext(source + "\n;({ parseStatus, stateLabel, nextStep, outcomeLabel, outcomeSeverity, missingModels, identityLine, elapsed, lastScanText, lastScanReason, parseActionResult, clamp })")
+const G = vm.runInNewContext(source + "\n;({ parseStatus, stateLabel, nextStep, outcomeLabel, outcomeSeverity, missingModels, identityLine, elapsed, lastScanText, lastScanReason, parseActionResult, clamp, lockLabel })")
 // Objects built inside the vm have a foreign Object prototype, which trips
 // deepStrictEqual; compare by value instead.
 function assertSame(actual, expected, message) {
@@ -23,6 +23,7 @@ const online = {
   schemaVersion: 1, reachable: true, armed: true, mode: "light", scanning: false, enrolled: true,
   remembered: true, camera: "/dev/video0", models: { landmarker: true, arcface: true },
   identities: [{ name: "ayan", enabled: true, captures: 5 }, { name: "glasses", enabled: false, captures: 3 }],
+  pam: { module: true, hyprlock: false, shellPassword: true, shellFingerprint: false, wired: true },
   lastScan: { outcome: "unlocked", identity: "ayan", similarity: 0.71, reason: null, at: 1000, duration: 1.4 }
 }
 
@@ -52,6 +53,17 @@ test("next step is the single command that unblocks the user", () => {
   assert.strictEqual(G.nextStep(G.parseStatus(JSON.stringify({ ...online, enrolled: false }))), 'glancectl enroll --name "$USER" --remember')
   assert.strictEqual(G.nextStep(G.parseStatus(JSON.stringify({ ...online, armed: false }))), "glancectl arm")
   assert.strictEqual(G.nextStep(G.parseStatus(JSON.stringify(online))), "")
+  assert.strictEqual(G.nextStep(G.parseStatus(JSON.stringify({ ...online, pam: { module: true, wired: false } }))), "glancectl setup-pam")
+  assert.strictEqual(G.nextStep(G.parseStatus(JSON.stringify({ ...online, pam: undefined }))), "")
+})
+
+test("lock label reflects which PAM stack carries the module", () => {
+  assert.strictEqual(G.lockLabel(G.parseStatus(JSON.stringify(online))), "On Enter · shell lock")
+  assert.strictEqual(G.lockLabel(G.parseStatus(JSON.stringify({ ...online, pam: { module: true, shellFingerprint: true, wired: true } }))), "Hands-free at lock")
+  assert.strictEqual(G.lockLabel(G.parseStatus(JSON.stringify({ ...online, pam: { module: true, hyprlock: true, shellPassword: true, wired: true } }))), "On Enter · shell lock, hyprlock")
+  assert.strictEqual(G.lockLabel(G.parseStatus(JSON.stringify({ ...online, pam: { module: false, wired: false } }))), "Module not installed")
+  assert.strictEqual(G.lockLabel(G.parseStatus(JSON.stringify({ ...online, pam: { module: true, wired: false } }))), "Not wired")
+  assert.strictEqual(G.lockLabel(G.parseStatus(JSON.stringify({ ...online, pam: undefined }))), "")
 })
 
 test("outcomes map to labels and severities", () => {

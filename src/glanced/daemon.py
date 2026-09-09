@@ -21,12 +21,17 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Optional
 
-from . import ipc, models, paths
+from . import ipc, models, pamsetup, paths
 from .liveness import LivenessMode
 from .pipeline import DEFAULT_SCAN_TIMEOUT, Outcome, ScanResult, UnlockPipeline
 from .store import EnrollmentStore, load as load_store
 
 log = logging.getLogger("glanced")
+
+#: Give up this early when nobody is in front of the camera. A PAM stack runs
+#: this module *before* the password one, so an absent face must not make a
+#: typed password wait the full scan timeout.
+DEFAULT_NO_FACE_TIMEOUT = 3.0
 
 
 @dataclass
@@ -71,6 +76,7 @@ class Daemon:
         device: str = "/dev/video0",
         store_path: Path = paths.STORE_PATH,
         scan_timeout: float = DEFAULT_SCAN_TIMEOUT,
+        no_face_timeout: float = DEFAULT_NO_FACE_TIMEOUT,
         relock_after: Optional[float] = None,
         processor_factory: Optional[Callable[[], Any]] = None,
     ) -> None:
@@ -78,6 +84,7 @@ class Daemon:
         self.device = device
         self.store_path = Path(store_path)
         self.scan_timeout = scan_timeout
+        self.no_face_timeout = no_face_timeout
         self.session = Session(idle_timeout=relock_after)
         self.store = EnrollmentStore()
         self.last_scan: Optional[dict[str, Any]] = None
@@ -219,6 +226,7 @@ class Daemon:
             "remembered": paths.PASSPHRASE_FILE.exists(),
             "camera": self.device,
             "models": models.status(),
+            "pam": pamsetup.status(),
             "identities": [
                 {"name": i.name, "enabled": i.enabled, "captures": int(len(i.embeddings))}
                 for i in self.store.identities
@@ -269,6 +277,7 @@ class Daemon:
         processor = self._get_processor()
         pipeline = UnlockPipeline(self.store, mode=self.mode, scan_timeout=self.scan_timeout)
         pipeline.begin()
+        started = time.monotonic()
         saw_face = False
 
         with Camera(CameraConfig(device=self.device)) as camera:
@@ -276,9 +285,11 @@ class Daemon:
                 now = time.monotonic()
                 observation = processor.process(native, now, want_embedding=not pipeline.matched)
                 if observation is None:
+                    if not saw_face and now - started > self.no_face_timeout:
+                        return ScanResult(Outcome.NO_FACE, reason="No face in view.")
                     expired = pipeline.expired()
                     if expired is not None:
-                        return expired if saw_face else ScanResult(Outcome.NO_FACE, reason="No face in view.")
+                        return expired
                     continue
                 saw_face = True
                 result = pipeline.observe(observation.liveness_frame, observation.embedding)

@@ -22,6 +22,7 @@ import argparse
 import getpass
 import json
 import logging
+import subprocess
 import sys
 from pathlib import Path
 from typing import Optional
@@ -218,6 +219,9 @@ def _status(args: argparse.Namespace) -> int:
             "identities": [],
             "lastScan": None,
         }
+        from . import pamsetup
+
+        payload["pam"] = pamsetup.status()
 
     def human(p: dict) -> None:
         if not p["reachable"]:
@@ -229,6 +233,17 @@ def _status(args: argparse.Namespace) -> int:
             print(f"camera:     {p['camera']}")
         print(f"enrolled:   {p['enrolled']}")
         print(f"models:     landmarker={p['models']['landmarker']} arcface={p['models']['arcface']}")
+        pam = p.get("pam")
+        if pam:
+            if not pam["module"]:
+                lock = "module not installed (glancectl setup-pam)"
+            elif pam["shellFingerprint"]:
+                lock = "hands-free (shell fingerprint stack)"
+            elif pam["shellPassword"] or pam["hyprlock"]:
+                lock = "on Enter (" + ", ".join(n for n, v in (("shell", pam["shellPassword"]), ("hyprlock", pam["hyprlock"])) if v) + ")"
+            else:
+                lock = "not wired (glancectl setup-pam)"
+            print(f"lock screen: {lock}")
         for identity in p.get("identities", []):
             flag = "enabled" if identity["enabled"] else "disabled"
             print(f"  - {identity['name']} ({identity['captures']} captures, {flag})")
@@ -240,6 +255,21 @@ def _status(args: argparse.Namespace) -> int:
 
     _emit(args, payload, human=human)
     return 0 if payload["reachable"] else 1
+
+
+def _setup_pam(args: argparse.Namespace) -> int:
+    from . import pamsetup
+
+    repo_pam = Path(__file__).resolve().parents[2] / "pam"
+    try:
+        return pamsetup.setup(
+            hands_free=args.hands_free,
+            remove=args.remove,
+            repo_pam_dir=repo_pam if repo_pam.exists() else None,
+        )
+    except subprocess.CalledProcessError as error:
+        print(f"setup-pam: command failed: {' '.join(map(str, error.cmd))}", file=sys.stderr)
+        return 1
 
 
 def _selftest(args: argparse.Namespace) -> int:
@@ -325,6 +355,7 @@ def _daemon(args: argparse.Namespace) -> int:
         mode=LivenessMode(args.mode),
         device=args.device,
         scan_timeout=args.scan_timeout,
+        no_face_timeout=args.no_face_timeout,
         relock_after=args.relock_after or None,
     )
     if daemon.arm_from_file():
@@ -385,6 +416,12 @@ def main(argv: list[str] | None = None) -> int:
     authenticate.add_argument("--json", action="store_true")
     authenticate.set_defaults(func=_authenticate)
 
+    setup_pam = subparsers.add_parser("setup-pam", help="wire pam_glance into the lock screen (uses sudo)")
+    setup_pam.add_argument("--hands-free", action="store_true",
+                           help="scan automatically at lock via the shell's fingerprint stack (needs an enrolled fingerprint)")
+    setup_pam.add_argument("--remove", action="store_true", help="strip pam_glance from every lock stack")
+    setup_pam.set_defaults(func=_setup_pam)
+
     status = subparsers.add_parser("status", help="query the running daemon")
     status.add_argument("--json", action="store_true")
     status.set_defaults(func=_status)
@@ -407,6 +444,8 @@ def main(argv: list[str] | None = None) -> int:
     daemon.add_argument("--mode", choices=["light", "heavy"], default="light")
     daemon.add_argument("--device", default="/dev/video0")
     daemon.add_argument("--scan-timeout", type=float, default=8.0, help="seconds per unlock attempt")
+    daemon.add_argument("--no-face-timeout", type=float, default=3.0,
+                        help="give up this early when no face is in view, so a typed password is not kept waiting")
     daemon.add_argument("--relock-after", type=float, default=0.0,
                         help="disarm after this many idle seconds (0 = never)")
     daemon.set_defaults(func=_daemon)
