@@ -27,7 +27,7 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-from . import ipc, paths
+from . import ipc, paths, poses
 
 OUTCOME_TEXT = {
     "unlocked": "UNLOCKED",
@@ -83,6 +83,40 @@ def _fetch_model(args: argparse.Namespace) -> int:
     return 0
 
 
+def _pose_printer():
+    """A one-line terminal readout for the guided sweep.
+
+    Repaints in place rather than scrolling, so the sweep does not produce
+    several hundred lines of prompt. Falls back to printing each pose once
+    when stdout is not a terminal, since carriage returns in a log file are
+    worse than useless.
+    """
+    interactive = sys.stdout.isatty()
+    last = [None]
+
+    def report(progress) -> None:
+        if progress.pose is None:
+            return
+        if not progress.face_detected:
+            text = "looking for your face"
+        elif progress.too_far:
+            text = "move a little closer"
+        else:
+            text = progress.pose.instruction.lower()
+            if progress.holding:
+                text += " — hold it"
+        line = f"  [{progress.pose_index + 1}/{progress.pose_count}] {text}"
+        if line == last[0]:
+            return
+        last[0] = line
+        if interactive:
+            print(f"\r\033[K{line}", end="", flush=True)
+        else:
+            print(line, flush=True)
+
+    return report
+
+
 def _enroll(args: argparse.Namespace) -> int:
     from . import store as store_module
     from .scan import FaceProcessor
@@ -98,28 +132,60 @@ def _enroll(args: argparse.Namespace) -> int:
         print("wrong passphrase", file=sys.stderr)
         return 1
 
+    # The window's worker thread builds its own processor, so building one
+    # here too would load MediaPipe and ArcFace twice and hold /dev/video0
+    # while the window tries to open it.
+    processor = None
+    if not args.gui:
+        try:
+            processor = FaceProcessor()
+        except FileNotFoundError as error:
+            print(error, file=sys.stderr)
+            return 2
+
     try:
-        processor = FaceProcessor()
-    except FileNotFoundError as error:
-        print(error, file=sys.stderr)
+        if args.gui:
+            from .gui import run_enrollment
+
+            embeddings, _pose_names = run_enrollment(
+                name=args.name,
+                device=args.device,
+                samples_per_pose=args.samples_per_pose,
+                debug=args.debug,
+            )
+        elif args.no_guide:
+            print(f"\nEnrolling '{args.name}': {args.captures} captures from {args.device}.\n")
+            from .enroll import capture_embeddings
+
+            embeddings = capture_embeddings(
+                processor,
+                device=args.device,
+                count=args.captures,
+                on_prompt=lambda i, n, text: print(f"  [{i}/{n}] {text} ...", flush=True),
+                on_capture=lambda i, n, score: print(f"        captured (self-similarity {score:.2f})", flush=True),
+            )
+        else:
+            total = len(poses.POSES) * args.samples_per_pose
+            print(f"\nEnrolling '{args.name}': {total} samples across "
+                  f"{len(poses.POSES)} head directions, from {args.device}.\n")
+            from .enroll import capture_guided
+
+            embeddings, _pose_names = capture_guided(
+                processor,
+                device=args.device,
+                samples_per_pose=args.samples_per_pose,
+                on_pose=lambda pose: print(f"  captured: {pose.name}", flush=True),
+                on_progress=_pose_printer(),
+            )
+    except ImportError as error:
+        print(f"\n{error}", file=sys.stderr)
         return 2
-
-    print(f"\nEnrolling '{args.name}': {args.captures} captures from {args.device}.\n")
-    try:
-        from .enroll import capture_embeddings
-
-        embeddings = capture_embeddings(
-            processor,
-            device=args.device,
-            count=args.captures,
-            on_prompt=lambda i, n, text: print(f"  [{i}/{n}] {text} ...", flush=True),
-            on_capture=lambda i, n, score: print(f"        captured (self-similarity {score:.2f})", flush=True),
-        )
     except (TimeoutError, RuntimeError) as error:
         print(f"\nenrollment failed: {error}", file=sys.stderr)
         return 1
     finally:
-        processor.close()
+        if processor is not None:
+            processor.close()
 
     import numpy as np
 
@@ -389,8 +455,18 @@ def main(argv: list[str] | None = None) -> int:
 
     enroll = subparsers.add_parser("enroll", help="capture your face into the encrypted store")
     enroll.add_argument("--name", required=True, help="identity name, e.g. your first name or 'glasses'")
-    enroll.add_argument("--captures", type=int, default=5)
     enroll.add_argument("--device", default="/dev/video0")
+    enroll.add_argument("--gui", action="store_true",
+                        help="guide the sweep in a window with a camera preview (needs the 'gui' extra)")
+    enroll.add_argument("--samples-per-pose", type=int, default=poses.SAMPLES_PER_POSE,
+                        help="samples to take at each of the five head directions")
+    enroll.add_argument("--no-guide", action="store_true",
+                        help="skip pose gating: five prompted captures, for a camera whose "
+                             "landmarker reports no head pose")
+    enroll.add_argument("--captures", type=int, default=5,
+                        help="captures to take with --no-guide")
+    enroll.add_argument("--debug", action="store_true",
+                        help="with --gui, show the live yaw/pitch reading")
     enroll.add_argument("--remember", action="store_true",
                         help="also store the passphrase (0600) so the daemon arms itself at login")
     passphrase_flags(enroll)

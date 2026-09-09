@@ -46,6 +46,7 @@ convenience feature, not a security upgrade.
 | Camera capture, landmarking, scan loop | Complete |
 | Daemon: sockets, arming, status | Complete, tested |
 | `glancectl` (enroll, arm, authenticate, status, live, selftest) | Complete |
+| Guided enrollment (`glanced/poses.py`, `--gui` tick ring) | Complete — five directions, after the macOS onboarding sweep |
 | `pam_glance` + `glancectl setup-pam` | Complete — see `pam/README.md` |
 | Omarchy plugin (`plugin/`) | Bar widget + panel — see `plugin/README.md` |
 | Lock screen indicator (`patches/omarchy-lock-faceid/`) | Face ID-style capsule with a live camera view — a patch to Omarchy's lock plugin |
@@ -53,7 +54,7 @@ convenience feature, not a security upgrade.
 ## Setup
 
 ```bash
-python -m venv .venv && .venv/bin/pip install -e '.[runtime,dev]'
+python -m venv .venv && .venv/bin/pip install -e '.[runtime,gui,dev]'
 .venv/bin/python -m pytest                   # no camera needed
 .venv/bin/glancectl fetch-model              # ~3MB landmarker + ~13MB ArcFace
 .venv/bin/glancectl live --mode heavy        # liveness against your webcam, no unlock
@@ -62,8 +63,8 @@ python -m venv .venv && .venv/bin/pip install -e '.[runtime,dev]'
 Then the real thing:
 
 ```bash
-packaging/install.sh                         # user service + plugin symlink
-glancectl enroll --name "$USER" --remember   # 5 captures, sets the passphrase
+packaging/install.sh                             # user service + plugin symlink
+glancectl enroll --gui --name "$USER" --remember # guided sweep, sets the passphrase
 glancectl authenticate                       # one full scan: recognition + liveness
 glancectl setup-pam                          # wire the lock screen (sudo; keep a root shell open)
 omarchy plugin enable ayande.glance          # the bar widget
@@ -72,6 +73,19 @@ omarchy plugin enable ayande.glance          # the bar widget
 Lock the screen, press Enter (shell lock: any character then Enter), look at
 the camera. `pam/README.md` explains the two lock screens Omarchy has had, the
 on-demand vs `--hands-free` choice, and how to undo it.
+
+`enroll` walks you through five head directions — centre, then left, up,
+right and down — and takes two samples at each, gated on the yaw and pitch the
+landmarker reports rather than on you being asked nicely to move. That is what
+makes ten rows cover five poses instead of ten near-copies of a frontal
+capture. The macOS app sweeps nine, adding the diagonals; those ask for a
+compound turn that is harder to explain and to hold, and a template already
+covering both profiles and both chin extremes has the corners bracketed. `--gui` shows the sweep as a Face ID-style tick ring around a
+mirrored camera disc, each direction lighting its sector as it lands; without
+it the same sweep runs against a one-line terminal readout. `--no-guide` falls
+back to the old five prompted captures, for a camera whose landmarker reports
+no head pose at all. No frame is written in any of the three: the preview is
+pixels on the way to the screen and nothing else.
 
 `enroll` asks for a passphrase the first time; it encrypts the embeddings at
 rest. The daemon starts *disarmed* and cannot scan until it has that
