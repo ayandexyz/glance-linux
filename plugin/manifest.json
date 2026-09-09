@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "id": "ayande.glance",
+  "name": "Glance",
+  "version": "0.1.0",
+  "author": "Ayan De",
+  "license": "MIT",
+  "description": "Face unlock with liveness detection: armed state, enrolled identities, the last scan's verdict, and a test scan, in a native Omarchy bar panel.",
+  "kinds": ["bar-widget"],
+  "activation": "on-demand",
+  "entryPoints": {
+    "barWidget": "Panel.qml"
+  },
+  "barWidget": {
+    "displayName": "Glance",
+    "description": "One bar icon and one panel for the glanced face-unlock daemon: whether it is armed, who is enrolled, what the last scan decided and why, plus arm, disarm and test-scan actions.",
+    "category": "System",
+    "aliases": ["glance", "face-unlock"],
+    "defaultSection": "right",
+    "allowMultiple": false,
+    "defaults": {
+      "refreshIntervalSec": 30,
+      "glancectlPath": ""
+    },
+    "schema": [
+      {
+        "key": "refreshIntervalSec",
+        "type": "integer",
+        "label": "Refresh interval (seconds)",
+        "description": "How often the daemon's status is polled while idle. The panel refreshes on open and after every action regardless.",
+        "min": 5,
+        "max": 600,
+        "step": 5,
+        "defaultValue": 30
+      },
+      {
+        "key": "glancectlPath",
+        "type": "string",
+        "label": "glancectl path",
+        "defaultValue": "",
+        "description": "Optional. Leave empty to find glancectl on PATH; set it to the venv binary for a source checkout (e.g. ~/glance-linux/.venv/bin/glancectl)."
+      }
+    ]
+  }
+}

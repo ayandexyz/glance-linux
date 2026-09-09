@@ -1,0 +1,93 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+plugin_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+shell_root=${OMARCHY_PATH:-/usr/share/omarchy}/shell
+test_root=$(mktemp -d)
+trap 'rm -rf -- "$test_root"' EXIT
+
+echo "== GlanceLogic unit tests =="
+node "$plugin_root/tests/test_glance_logic.js"
+
+echo
+echo "== manifest contract =="
+if command -v omarchy >/dev/null 2>&1; then
+  omarchy plugin validate "$plugin_root"
+  echo "omarchy plugin validate: passed"
+else
+  echo "omarchy not installed; skipped"
+fi
+
+echo
+echo "== qmllint =="
+# Advisory: the qmllint shipped on some Omarchy installs exits non-zero without
+# printing anything, so only actual messages are treated as findings.
+if command -v qmllint >/dev/null 2>&1 && [[ -d $shell_root ]]; then
+  lint_output=$(qmllint -I "$shell_root" "$plugin_root/Panel.qml" "$plugin_root/StatusBackend.qml" 2>&1 || true)
+  if [[ -n $lint_output ]]; then
+    echo "$lint_output"
+    if grep -qi "error" <<<"$lint_output"; then exit 1; fi
+  fi
+  echo "qmllint: no findings"
+else
+  echo "qmllint or the Omarchy shell not available; skipped"
+fi
+
+echo
+echo "== QML integration =="
+if ! command -v quickshell >/dev/null 2>&1; then
+  echo "quickshell not installed; skipped"; exit 0
+fi
+if [[ -z ${WAYLAND_DISPLAY:-} ]]; then
+  echo "no Wayland session; skipped"; exit 0
+fi
+
+# Quickshell maps the `qs` module prefix onto the config root, so the plugin is
+# mirrored next to symlinks of the shell's own Ui and Commons modules.
+run_root="$test_root/run"
+mkdir -p "$run_root"
+ln -s "$shell_root/Ui" "$run_root/Ui"
+ln -s "$shell_root/Commons" "$run_root/Commons"
+cp "$plugin_root"/*.qml "$plugin_root"/*.js "$run_root/"
+cp "$plugin_root/tests/qml/shell.qml" "$run_root/shell.qml"
+
+make_wrapper() {
+  cat >"$test_root/$1" <<WRAPPER
+#!/usr/bin/env bash
+export GLANCE_FAKE_MODE=$2
+exec "$plugin_root/tests/fake-glancectl" "\$@"
+WRAPPER
+  chmod +x "$test_root/$1"
+}
+make_wrapper fake-online online
+make_wrapper fake-offline offline
+make_wrapper fake-garbage garbage
+make_wrapper fake-crash crash
+
+export GLANCE_TEST_RESULT="$test_root/result.json"
+export GLANCE_PANEL_URL="file://$run_root/Panel.qml"
+export GLANCE_BACKEND_URL="file://$run_root/StatusBackend.qml"
+export GLANCE_FAKE_ONLINE="$test_root/fake-online"
+export GLANCE_FAKE_OFFLINE="$test_root/fake-offline"
+export GLANCE_FAKE_GARBAGE="$test_root/fake-garbage"
+export GLANCE_FAKE_CRASH="$test_root/fake-crash"
+
+log="$test_root/quickshell.log"
+if ! timeout 90 quickshell --path "$run_root/shell.qml" >"$log" 2>&1; then
+  echo "quickshell exited non-zero" >&2; sed -n '1,80p' "$log" >&2; exit 1
+fi
+if [[ ! -f $GLANCE_TEST_RESULT ]]; then
+  echo "harness wrote no result" >&2; sed -n '1,80p' "$log" >&2; exit 1
+fi
+python3 - "$GLANCE_TEST_RESULT" <<'PY'
+import json, sys
+report = json.load(open(sys.argv[1]))
+for failure in report["failures"]:
+    print(f"  FAIL: {failure}")
+if not report["ok"]:
+    sys.exit(1)
+print("QML integration: all assertions passed")
+PY
+
+echo
+echo "all tests passed"
