@@ -154,6 +154,25 @@ def yaw_from_transformation_matrix(matrix: np.ndarray) -> Optional[float]:
     return float(math.atan2(value, float(np.hypot(r[2, 1], r[2, 2]))))
 
 
+def pitch_from_transformation_matrix(matrix: np.ndarray) -> Optional[float]:
+    """Pitch in radians from MediaPipe's 4x4 facial transformation matrix.
+
+    The X-axis component of the same rotation :func:`yaw_from_transformation_matrix`
+    reads the Y-axis component of, recovered as ``atan2(r21, r22)``. Nothing in
+    the liveness model wants it — the cues are all yaw-driven — but guided
+    enrollment needs the up/down half of a guided direction sweep.
+
+    Sign follows the matrix, not an assumption: which way is "up" is asserted
+    once, in :mod:`glanced.poses`, so there is a single place to flip if a
+    camera stack disagrees.
+    """
+    m = np.asarray(matrix, dtype=float)
+    if m.shape != (4, 4) and m.shape != (3, 3):
+        return None
+    r = m[:3, :3]
+    return float(math.atan2(float(r[2, 1]), float(r[2, 2])))
+
+
 def extract(
     mesh: np.ndarray,
     face_bounding_box: Sequence[float],

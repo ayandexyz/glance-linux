@@ -14,7 +14,7 @@ from typing import Optional
 import numpy as np
 
 from . import paths
-from .liveness.features import yaw_from_transformation_matrix
+from .liveness.features import pitch_from_transformation_matrix, yaw_from_transformation_matrix
 
 #: The five points ArcFace alignment expects, as FaceMesh indices:
 #: left eye centre, right eye centre, nose tip, left mouth corner, right mouth
@@ -30,6 +30,9 @@ class DetectedFace:
     #: (x, y, w, h) in the same pixel space.
     bounding_box: tuple[float, float, float, float]
     yaw: Optional[float]
+    #: Head pitch in radians. Only guided enrollment reads it; the liveness
+    #: cues are yaw-driven and ignore it entirely.
+    pitch: Optional[float] = None
 
     def five_points(self) -> Optional[np.ndarray]:
         indices = (
@@ -72,10 +75,12 @@ class Landmarker:
         landmarks = result.face_landmarks[0]
         mesh = np.array([(lm.x * width, lm.y * height) for lm in landmarks], dtype=float)
 
-        yaw = None
+        yaw = pitch = None
         matrices = getattr(result, "facial_transformation_matrixes", None)
         if matrices:
-            yaw = yaw_from_transformation_matrix(np.asarray(matrices[0]))
+            matrix = np.asarray(matrices[0])
+            yaw = yaw_from_transformation_matrix(matrix)
+            pitch = pitch_from_transformation_matrix(matrix)
 
         x0, y0 = mesh.min(axis=0)
         x1, y1 = mesh.max(axis=0)
@@ -83,6 +88,7 @@ class Landmarker:
             mesh=mesh,
             bounding_box=(float(x0), float(y0), float(x1 - x0), float(y1 - y0)),
             yaw=yaw,
+            pitch=pitch,
         )
 
     def close(self) -> None:
