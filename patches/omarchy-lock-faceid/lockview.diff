@@ -1,0 +1,27 @@
+--- /usr/share/omarchy/shell/plugins/lock/LockView.qml	2026-09-09 00:00:57.000000000 +0530
++++ LockView.qml	2026-09-10 01:32:43.479004376 +0530
+@@ -16,6 +16,11 @@
+   property bool loadBackground: true
+   property string passwordText: ""
+   property bool syncingPasswordText: false
++  // Face unlock indicator (see FaceUnlockIndicator.qml): hidden | scanning |
++  // success | failure. Driven by the service from the password PAM
++  // conversation, so the view knows nothing about which module is scanning.
++  property string faceState: "hidden"
++  property string faceMessage: ""
+ 
+   readonly property string placeholderText: "Enter Password"
+   readonly property int fieldWidth: 381
+@@ -119,6 +124,12 @@
+       onPositionChanged: root.wakeRequested()
+     }
+ 
++    FaceUnlockIndicator {
++      phase: root.faceState
++      message: root.faceMessage
++      topMargin: Math.round(parent.height * 0.07)
++    }
++
+     BorderSurface {
+       id: inputField
+       width: root.fieldWidth

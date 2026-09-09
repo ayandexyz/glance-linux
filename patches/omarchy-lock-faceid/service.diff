@@ -1,0 +1,170 @@
+--- /usr/share/omarchy/shell/plugins/lock/Service.qml	2026-09-09 00:00:57.000000000 +0530
++++ Service.qml	2026-09-10 01:33:20.371099759 +0530
+@@ -33,6 +33,14 @@
+   property string lastEventAt: ""
+   property bool strandedLock: false
+   property bool strandedLockResolved: false
++  // Face unlock: a PAM module ahead of the password one (pam_glance, howdy)
++  // announces itself with an info message before it scans, and the
++  // conversation only reaches the password prompt if that scan failed. That
++  // is enough to drive the indicator without knowing anything about the
++  // module. hidden | scanning | success | failure.
++  property string faceState: "hidden"
++  property string faceMessage: ""
++  readonly property string faceMessagePrefix: "Glance:"
+ 
+   readonly property bool locked: lockRequested || sessionLock.locked || sessionLock.secure
+   readonly property bool authenticating: authenticatingPassword || fingerprintAuthenticating
+@@ -113,12 +121,53 @@
+     console.log("omarchy lock " + lastEventAt + " " + event)
+   }
+ 
++  function beginFaceScan() {
++    faceState = "scanning"
++    faceMessage = ""
++    faceHideTimer.stop()
++    faceUnlockTimer.stop()
++  }
++
++  // The scan did not unlock: PAM moved on to the password prompt, or the
++  // whole conversation failed. Show the miss briefly, then get out of the way.
++  function faceScanMissed() {
++    if (faceState !== "scanning") return
++    faceState = "failure"
++    faceHideTimer.restart()
++  }
++
++  // Hold the success frame for a beat before the lock drops, or the check
++  // mark is never seen.
++  function faceScanSucceeded() {
++    faceState = "success"
++    faceHideTimer.stop()
++    faceUnlockTimer.restart()
++  }
++
++  function clearFace() {
++    faceState = "hidden"
++    faceMessage = ""
++    faceHideTimer.stop()
++    faceUnlockTimer.stop()
++  }
++
++  function handlePamMessage() {
++    var text = String(passwordPam.message || "")
++    if (!passwordPam.responseRequired && text.indexOf(faceMessagePrefix) === 0) {
++      beginFaceScan()
++    } else if (passwordPam.responseRequired) {
++      faceScanMissed()
++    }
++    respondToPasswordPrompt()
++  }
++
+   function resetAuthenticationState() {
+     enteredPassword = ""
+     pendingPassword = ""
+     failureMessage = ""
+     failedAttempts = 0
+     authenticatingPassword = false
++    clearFace()
+     fingerprintAuthenticating = false
+     fingerprintRetryTimer.stop()
+     if (passwordPam.active) passwordPam.abort()
+@@ -277,6 +326,8 @@
+         inputEnabled: root.lockRequested
+         loadBackground: root.locked
+         passwordText: root.enteredPassword
++        faceState: root.faceState
++        faceMessage: root.faceMessage
+         onPasswordTextEdited: function(password) { root.enteredPassword = password }
+         onSubmitPassword: function(password) { root.submitPassword(password) }
+         onClearFailureRequested: root.failureMessage = ""
+@@ -307,6 +358,8 @@
+       inputEnabled: false
+       loadBackground: root.previewVisible
+       passwordText: ""
++      faceState: root.faceState
++      faceMessage: root.faceMessage
+     }
+ 
+     MouseArea {
+@@ -321,23 +374,56 @@
+     config: "omarchy-lock-password"
+     user: root.userName
+ 
+-    onResponseRequiredChanged: root.respondToPasswordPrompt()
+-    onPamMessage: root.respondToPasswordPrompt()
++    onResponseRequiredChanged: root.handlePamMessage()
++    onPamMessage: root.handlePamMessage()
+ 
+     onCompleted: function(result) {
+-      root.authenticatingPassword = false
+       root.pendingPassword = ""
+ 
+-      if (!root.lockRequested) return
+-      if (result === PamResult.Success) root.finishUnlock()
+-      else root.handlePasswordFailure()
++      if (!root.lockRequested) {
++        root.authenticatingPassword = false
++        return
++      }
++      if (result === PamResult.Success) {
++        // A face success: keep "Checking…" up and the display awake while the
++        // indicator shows its check mark; faceUnlockTimer finishes the unlock.
++        if (root.faceState === "scanning") {
++          root.faceScanSucceeded()
++          return
++        }
++        root.authenticatingPassword = false
++        root.finishUnlock()
++      } else {
++        root.authenticatingPassword = false
++        root.faceScanMissed()
++        root.handlePasswordFailure()
++      }
+     }
+ 
+     onError: function(error) {
++      root.authenticatingPassword = false
++      root.faceScanMissed()
+       root.handlePasswordFailure()
+     }
+   }
+ 
++  Timer {
++    id: faceUnlockTimer
++    interval: 800
++    repeat: false
++    onTriggered: {
++      root.authenticatingPassword = false
++      if (root.lockRequested) root.finishUnlock()
++    }
++  }
++
++  Timer {
++    id: faceHideTimer
++    interval: 1800
++    repeat: false
++    onTriggered: if (root.faceState === "failure") root.faceState = "hidden"
++  }
++
+   PamContext {
+     id: fingerprintPam
+     config: "omarchy-lock-fingerprint"
+@@ -547,5 +633,17 @@
+       root.previewVisible = false
+       return "ok"
+     }
++
++    // Drive the face indicator on the preview surface, so the animation can
++    // be seen and tuned without locking: hidden | scanning | success | failure.
++    function previewFace(phase: string): string {
++      var next = String(phase || "hidden")
++      if (["hidden", "scanning", "success", "failure"].indexOf(next) < 0) return "unknown phase"
++      root.refreshBackground()
++      root.previewVisible = true
++      root.faceState = next
++      root.faceMessage = ""
++      return "ok"
++    }
+   }
+ }
