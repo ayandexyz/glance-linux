@@ -23,6 +23,9 @@ runtime = [
     "cryptography>=42",
 ]
 dev = ["pytest>=8"]
+# Only `glancectl enroll --gui` imports Qt. The headless enroll, the daemon and
+# the PAM path all work without it, so it is not part of `runtime`.
+gui = ["PySide6>=6.6"]
 
 [project.scripts]
 glancectl = "glanced.cli:main"
