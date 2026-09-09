@@ -26,6 +26,7 @@ if (( uninstall )); then
   systemctl --user disable --now glanced.service 2>/dev/null || true
   rm -f "$unit_dir/glanced.service"
   rm -f "$plugin_dir/$plugin_id"
+  [[ -L $HOME/.local/bin/glancectl ]] && rm -f "$HOME/.local/bin/glancectl"
   systemctl --user daemon-reload
   echo "removed the service and the plugin link (enrollment in $data_dir is untouched)"
   exit 0
@@ -41,8 +42,15 @@ else
   exit 1
 fi
 
-mkdir -p "$unit_dir" "$data_dir"
+mkdir -p "$unit_dir" "$data_dir" "$HOME/.local/bin"
 chmod 700 "$data_dir"
+
+# ~/.local/bin is on the PATH the shell and terminals share; the venv is not.
+# A link there is what lets the plugin (and `glancectl` at a prompt) find it.
+if [[ $glancectl != "$HOME/.local/bin/glancectl" ]]; then
+  ln -sfn "$glancectl" "$HOME/.local/bin/glancectl"
+  echo "link:    ~/.local/bin/glancectl -> $glancectl"
+fi
 sed "s|^ExecStart=.*|ExecStart=$glancectl daemon --mode light|" \
   "$repo/packaging/systemd/glanced.service" > "$unit_dir/glanced.service"
 systemctl --user daemon-reload
@@ -60,4 +68,4 @@ if (( want_plugin )); then
 fi
 
 echo
-echo "next: $glancectl fetch-model && $glancectl enroll --name \"$USER\" --remember"
+echo "next: glancectl fetch-model && glancectl enroll --name \"$USER\" --remember"

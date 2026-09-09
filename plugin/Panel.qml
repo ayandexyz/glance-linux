@@ -125,14 +125,11 @@ Ui.Panel {
           fontFamily: root.fontFamily
           title: "Glance"
           meta: root.stateLabel
+          // `detail` is a small pill beside the title, so keep it to a count.
           detail: {
-            if (!root.status || !root.status.reachable) return "Face unlock daemon"
-            var parts = []
+            if (!root.status || !root.status.reachable || !root.status.armed) return ""
             var count = root.status.identities.length
-            if (root.status.armed) parts.push(count + (count === 1 ? " identity" : " identities"))
-            if (root.status.camera !== "") parts.push(root.status.camera)
-            if (root.status.remembered) parts.push("passphrase remembered")
-            return parts.join(" · ")
+            return count + (count === 1 ? " identity" : " identities")
           }
           iconComponent: Component {
             Text {
@@ -251,6 +248,21 @@ Ui.Panel {
               font.family: root.fontFamily
               font.pixelSize: Style.font.bodySmall
             }
+          }
+
+          Text {
+            width: parent.width
+            text: {
+              if (!root.status) return ""
+              var parts = []
+              if (root.status.camera !== "") parts.push(root.status.camera)
+              parts.push(root.status.remembered ? "passphrase remembered" : "arm again after login")
+              return parts.join(" · ")
+            }
+            color: root.dim
+            elide: Text.ElideRight
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.caption
           }
         }
 

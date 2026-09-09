@@ -1,6 +1,7 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
+import Quickshell
 import Quickshell.Io
 import "GlanceLogic.js" as GlanceLogic
 
@@ -32,10 +33,14 @@ Item {
 
   readonly property int refreshIntervalSec: Math.round(GlanceLogic.clamp(
     setting("refreshIntervalSec", 30), 5, 600))
-  readonly property string binaryPath: {
-    var configured = String(setting("glancectlPath", "")).trim()
-    return configured === "" ? "glancectl" : configured
-  }
+  // Configured path wins. Otherwise PATH, and if that fails once, the place
+  // packaging/install.sh links the binary to — the shell's PATH is not the
+  // user's login PATH, and a venv checkout is never on it.
+  readonly property string configuredPath: String(setting("glancectlPath", "")).trim()
+  readonly property string fallbackPath: Quickshell.env("HOME") + "/.local/bin/glancectl"
+  property bool useFallback: false
+  readonly property string binaryPath: configuredPath !== "" ? configuredPath
+    : (useFallback ? fallbackPath : "glancectl")
 
   readonly property bool reachable: status ? status.reachable : false
   readonly property bool armed: status ? status.armed : false
@@ -64,6 +69,11 @@ Item {
     if (statusProcess.timedOut) {
       fetchError = "glancectl status timed out"
     } else if (!statusProcess.exitSeen) {
+      if (configuredPath === "" && !useFallback) {
+        // Not on PATH; try the install location once before giving up.
+        useFallback = true
+        return
+      }
       binaryMissing = true
       fetchError = "Could not run " + binaryPath
     } else {
@@ -121,6 +131,10 @@ Item {
     refresh()
   }
 
+  onConfiguredPathChanged: {
+    binaryMissing = false
+    useFallback = false
+  }
   onBinaryPathChanged: {
     binaryMissing = false
     refresh()

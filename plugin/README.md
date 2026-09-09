@@ -45,9 +45,9 @@ set **glancectl path** in the widget's settings to the venv binary.
 ## IPC
 
 ```bash
-omarchy-shell ipc call ayande.glance toggle
-omarchy-shell ipc call ayande.glance refresh
-omarchy-shell ipc call ayande.glance scan
+omarchy-shell ayande.glance toggle
+omarchy-shell ayande.glance refresh
+omarchy-shell ayande.glance scan
 ```
 
 ## Tests
