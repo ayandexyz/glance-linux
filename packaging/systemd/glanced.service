@@ -1,0 +1,26 @@
+[Unit]
+Description=Glance face unlock daemon
+Documentation=https://github.com/%u/glance-linux
+After=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/glancectl daemon
+Restart=on-failure
+RestartSec=2
+
+# The daemon needs the camera and its own runtime directory, and nothing else.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=%h/.local/share/glance
+RuntimeDirectory=glance
+RuntimeDirectoryMode=0700
+DeviceAllow=char-video4linux rw
+RestrictAddressFamilies=AF_UNIX
+SystemCallFilter=@system-service
+MemoryDenyWriteExecute=false
+
+[Install]
+WantedBy=graphical-session.target

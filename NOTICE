@@ -1,0 +1,10 @@
+This project reimplements the liveness detection model from Glance
+(https://github.com/jonnyoo/glance) by Jonathan Zhou, MIT licensed.
+
+The five-cue deny/confirm design, the tuning constants, and the reasoning
+recorded in the comments of src/glanced/liveness/ originate there. The Swift
+implementation was not copied; each module was rewritten against MediaPipe,
+OpenCV and NumPy, and the deviations are documented at each site.
+
+The ArcFace recognition model is from InsightFace
+(https://github.com/deepinsight/insightface).
