@@ -40,6 +40,8 @@ Item {
   // module. hidden | scanning | success | failure.
   property string faceState: "hidden"
   property string faceMessage: ""
+  property bool faceAfterglow: false
+  property string faceAfterglowPhase: "hidden"
   readonly property string faceMessagePrefix: "Glance:"
 
   readonly property bool locked: lockRequested || sessionLock.locked || sessionLock.secure
@@ -131,6 +133,7 @@ Item {
   // The scan did not unlock: PAM moved on to the password prompt, or the
   // whole conversation failed. Show the miss briefly, then get out of the way.
   function faceScanMissed() {
+    dropAfterglow()
     if (faceState !== "scanning") return
     faceState = "failure"
     faceHideTimer.restart()
@@ -141,7 +144,56 @@ Item {
   function faceScanSucceeded() {
     faceState = "success"
     faceHideTimer.stop()
+    beginAfterglow()
     faceUnlockTimer.restart()
+  }
+
+  // --- the unlock afterglow -------------------------------------------
+  //
+  // The lock surface is destroyed the instant the session unlocks, taking the
+  // indicator with it — so the check mark would disappear at exactly the
+  // moment it is doing its job, and the unlock would end on a blink. This
+  // layer-shell window carries the same capsule, at the same place, across
+  // that boundary: raised just before the lock drops, and left on the desktop
+  // for a beat afterwards.
+  //
+  // It takes no keyboard focus and passes every click straight through, so it
+  // cannot get between the user and the session it has just handed back.
+  // Raised at the verdict, not at the unlock. A layer-shell window is not on
+  // screen when it is asked for — it has to be created, configured and
+  // painted, measured here at 60-230ms — while the lock surface is destroyed
+  // in the same turn as the request. Raising it at the unlock therefore leaves
+  // a stretch with neither on screen, which reads as the capsule vanishing and
+  // popping back.
+  //
+  // A session lock surface renders above every layer-shell layer, so a window
+  // raised now stays invisible until the lock drops and reveals it, already
+  // painted and in place. Should a compositor ever show it early, what appears
+  // is the same capsule at the same position, so there is still nothing to
+  // see.
+  function beginAfterglow() {
+    faceAfterglow = true
+    faceAfterglowPhase = "success"
+  }
+
+  // The beat on the desktop is measured from when the lock actually goes, not
+  // from when the window was raised.
+  function holdAfterglow() {
+    afterglowHoldTimer.restart()
+  }
+
+  function endAfterglow() {
+    afterglowHoldTimer.stop()
+    faceAfterglowPhase = "hidden"   // slides up and fades
+    afterglowExitTimer.restart()
+  }
+
+  // Nothing half-faded may survive into a new lock.
+  function dropAfterglow() {
+    afterglowHoldTimer.stop()
+    afterglowExitTimer.stop()
+    faceAfterglowPhase = "hidden"
+    faceAfterglow = false
   }
 
   function clearFace() {
@@ -181,6 +233,7 @@ Item {
     }
 
     resetAuthenticationState()
+    dropAfterglow()
     lockRequested = true
     armBlankTimer()
     logEvent("lock-requested")
@@ -338,6 +391,29 @@ Item {
   }
 
   PanelWindow {
+    id: afterglowWindow
+    visible: root.faceAfterglow
+    anchors { top: true; bottom: true; left: true; right: true }
+    color: "transparent"
+    WlrLayershell.namespace: "omarchy-lock-afterglow"
+    WlrLayershell.layer: WlrLayer.Overlay
+    WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
+    exclusionMode: ExclusionMode.Ignore
+    // Empty input region: the pointer never meets this window at all.
+    mask: Region {}
+
+    FaceUnlockIndicator {
+      phase: root.faceAfterglowPhase
+      message: root.faceMessage
+      // The same offset LockView gives it, so the capsule does not move by a
+      // pixel as it changes surfaces.
+      topMargin: Math.round(parent.height * 0.07)
+      animateEntry: false
+      overDesktop: true
+    }
+  }
+
+  PanelWindow {
     id: previewWindow
     visible: root.previewVisible
     anchors { top: true; bottom: true; left: true; right: true }
@@ -407,14 +483,36 @@ Item {
     }
   }
 
+  // Long enough to read the check mark, short enough that the session does
+  // not feel withheld: the afterglow carries the rest of the confirmation on
+  // the far side of the unlock, where it costs the user nothing.
   Timer {
     id: faceUnlockTimer
-    interval: 800
+    interval: 550
     repeat: false
     onTriggered: {
       root.authenticatingPassword = false
-      if (root.lockRequested) root.finishUnlock()
+      if (!root.lockRequested) {
+        root.dropAfterglow()
+        return
+      }
+      root.finishUnlock()
+      root.holdAfterglow()
     }
+  }
+
+  Timer {
+    id: afterglowHoldTimer
+    interval: 900
+    repeat: false
+    onTriggered: root.endAfterglow()
+  }
+
+  Timer {
+    id: afterglowExitTimer
+    interval: 420  // covers the indicator's own exit transition
+    repeat: false
+    onTriggered: root.faceAfterglow = false
   }
 
   Timer {

@@ -31,6 +31,10 @@ class Observation:
     #: caller did not ask for one.
     embedding: Optional[np.ndarray]
     timestamp: float
+    #: The face box in *native* camera pixels. `face.bounding_box` is in
+    #: working resolution; anything drawing on the full frame — the lock
+    #: screen preview — needs this one instead of rediscovering the scale.
+    native_bounding_box: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)
 
 
 class FaceProcessor:
@@ -79,7 +83,13 @@ class FaceProcessor:
                 if aligned is not None:
                     embedding = self.embedder.embed(aligned)
 
-        return Observation(face=face, liveness_frame=liveness_frame, embedding=embedding, timestamp=now)
+        return Observation(
+            face=face,
+            liveness_frame=liveness_frame,
+            embedding=embedding,
+            timestamp=now,
+            native_bounding_box=native_box,
+        )
 
     def close(self) -> None:
         self.landmarker.close()

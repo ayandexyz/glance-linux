@@ -356,6 +356,7 @@ def _daemon(args: argparse.Namespace) -> int:
         device=args.device,
         scan_timeout=args.scan_timeout,
         no_face_timeout=args.no_face_timeout,
+        preview=not args.no_preview,
         relock_after=args.relock_after or None,
     )
     if daemon.arm_from_file():
@@ -446,6 +447,8 @@ def main(argv: list[str] | None = None) -> int:
     daemon.add_argument("--scan-timeout", type=float, default=8.0, help="seconds per unlock attempt")
     daemon.add_argument("--no-face-timeout", type=float, default=3.0,
                         help="give up this early when no face is in view, so a typed password is not kept waiting")
+    daemon.add_argument("--no-preview", action="store_true",
+                        help="never write camera frames for the lock screen indicator to display")
     daemon.add_argument("--relock-after", type=float, default=0.0,
                         help="disarm after this many idle seconds (0 = never)")
     daemon.set_defaults(func=_daemon)

@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 
 from . import ipc, models, pamsetup, paths
+from .preview import PreviewWriter
 from .liveness import LivenessMode
 from .pipeline import DEFAULT_SCAN_TIMEOUT, Outcome, ScanResult, UnlockPipeline
 from .store import EnrollmentStore, load as load_store
@@ -78,6 +79,7 @@ class Daemon:
         scan_timeout: float = DEFAULT_SCAN_TIMEOUT,
         no_face_timeout: float = DEFAULT_NO_FACE_TIMEOUT,
         relock_after: Optional[float] = None,
+        preview: bool = True,
         processor_factory: Optional[Callable[[], Any]] = None,
     ) -> None:
         self.mode = mode
@@ -85,6 +87,9 @@ class Daemon:
         self.store_path = Path(store_path)
         self.scan_timeout = scan_timeout
         self.no_face_timeout = no_face_timeout
+        # Publishes camera frames for the lock screen's indicator to draw. Off
+        # means no frame ever leaves the process; see preview.py.
+        self.preview = preview
         self.session = Session(idle_timeout=relock_after)
         self.store = EnrollmentStore()
         self.last_scan: Optional[dict[str, Any]] = None
@@ -135,6 +140,10 @@ class Daemon:
         selector = selectors.DefaultSelector()
         selector.register(auth, selectors.EVENT_READ, self._handle_auth)
         selector.register(status, selectors.EVENT_READ, self._handle_status)
+
+        # A daemon killed mid-scan leaves its last frame behind; drop it before
+        # anything can read a picture of a face from a previous session.
+        PreviewWriter().clear()
 
         self._running = True
         log.info("listening on %s and %s", ipc.AUTH_SOCKET, ipc.STATUS_SOCKET)
@@ -225,6 +234,7 @@ class Daemon:
             "enrolled": self.store_path.exists(),
             "remembered": paths.PASSPHRASE_FILE.exists(),
             "camera": self.device,
+            "preview": self.preview,
             "models": models.status(),
             "pam": pamsetup.status(),
             "identities": [
@@ -279,24 +289,38 @@ class Daemon:
         pipeline.begin()
         started = time.monotonic()
         saw_face = False
+        preview = PreviewWriter() if self.preview else None
 
-        with Camera(CameraConfig(device=self.device)) as camera:
-            for native in camera.frames():
-                now = time.monotonic()
-                observation = processor.process(native, now, want_embedding=not pipeline.matched)
-                if observation is None:
-                    if not saw_face and now - started > self.no_face_timeout:
-                        return ScanResult(Outcome.NO_FACE, reason="No face in view.")
-                    expired = pipeline.expired()
-                    if expired is not None:
-                        return expired
-                    continue
-                saw_face = True
-                result = pipeline.observe(observation.liveness_frame, observation.embedding)
-                if result.outcome is not Outcome.PENDING:
-                    return result
+        try:
+            with Camera(CameraConfig(device=self.device)) as camera:
+                for native in camera.frames():
+                    now = time.monotonic()
+                    observation = processor.process(native, now, want_embedding=not pipeline.matched)
+                    if preview is not None:
+                        # Published either way: with no face detected the crop
+                        # falls back to the middle of the frame, which is what
+                        # lets someone see themselves and move into view.
+                        preview.write(
+                            native, observation.native_bounding_box if observation else None, now
+                        )
+                    if observation is None:
+                        if not saw_face and now - started > self.no_face_timeout:
+                            return ScanResult(Outcome.NO_FACE, reason="No face in view.")
+                        expired = pipeline.expired()
+                        if expired is not None:
+                            return expired
+                        continue
+                    saw_face = True
+                    result = pipeline.observe(observation.liveness_frame, observation.embedding)
+                    if result.outcome is not Outcome.PENDING:
+                        return result
 
-        return ScanResult(Outcome.ERROR, reason="Camera stopped delivering frames.")
+            return ScanResult(Outcome.ERROR, reason="Camera stopped delivering frames.")
+        finally:
+            # The frame outlives the scan by no more than this: the indicator
+            # has already switched to its verdict by the time it notices.
+            if preview is not None:
+                preview.clear()
 
 
 def _describe(result: ScanResult) -> dict[str, Any]:

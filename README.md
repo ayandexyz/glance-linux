@@ -48,6 +48,7 @@ convenience feature, not a security upgrade.
 | `glancectl` (enroll, arm, authenticate, status, live, selftest) | Complete |
 | `pam_glance` + `glancectl setup-pam` | Complete — see `pam/README.md` |
 | Omarchy plugin (`plugin/`) | Bar widget + panel — see `plugin/README.md` |
+| Lock screen indicator (`patches/omarchy-lock-faceid/`) | Face ID-style capsule with a live camera view — a patch to Omarchy's lock plugin |
 
 ## Setup
 
