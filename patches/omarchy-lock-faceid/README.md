@@ -1,9 +1,13 @@
 # Face ID-style indicator for the Omarchy lock screen
 
-A capsule that drops in at the top centre of the lock screen while a face PAM
-module is scanning, showing **a live view of the camera** inside the sweep
-ring. It closes into a check mark on success and shakes on a miss. Modelled on
-Glance's notch pill on macOS and iOS's Face ID motion.
+A pill that drops from the top of the lock screen while a face PAM module is
+scanning. It springs open on the Omarchy mark, morphs into **a live view of
+the camera** inside a sweeping ring, and closes into a tick on success. There
+is no text anywhere in it: the mark says whose lock screen this is, the ring
+says it is looking, the tick says it worked.
+
+The motion is Glance's, ported from `NotchOverlay/NotchOverlayView.swift` in
+the macOS app.
 
 This is a patch to Omarchy's own lock plugin (`shell/plugins/lock/`), because
 nothing outside the session-lock surface can draw over it. It is the shape of
@@ -17,12 +21,48 @@ message; the patch watches for that prefix:
 
 | PAM event | indicator |
 |---|---|
-| info message starting `Glance:` | `scanning` — slide in, sweep, glyph breathes |
-| conversation completes with success while scanning | `success` — ring closes, glyph pops to ✓, unlock 800 ms later |
+| info message starting `Glance:` | `scanning` — pill drops in, opens on the mark, then the ring and the camera |
+| conversation completes with success while scanning | `success` — ring closes, tick pops, unlock 550 ms later |
 | PAM moves on to the password prompt | `failure` — red ring, shake, hides after 1.8 s; password checked as usual |
 
 No polling, no socket, and any module that announces itself the same way
 (howdy could) gets the indicator for free.
+
+## The motion, and why it is copied exactly
+
+Two things carry over from upstream, and both are about the *choreography*
+rather than the drawing:
+
+**The slide and the expansion are separate timelines.** Coming in, the pill
+slides down first and its size follows 160 ms later; going out it contracts
+first and leaves 180 ms later. Moving both together reads as a box changing
+size. Staggering them reads as an object arriving. Upstream hit the same wall
+in SwiftUI and solved it the same way, with two independently mutated state
+mirrors rather than one animated transition.
+
+**The springs are asymmetric.** A little overshoot opening (upstream's
+`spring(response: 0.45, damping: 0.7)`), none closing (`damping: 1.0`).
+Arriving feels eager, leaving feels deliberate.
+
+Every corner radius is half the pill's height, so one number carries the shape
+from pill to capsule to circle as it grows and morphs.
+
+## The Omarchy mark
+
+Taken from `logo.svg`, which Omarchy already ships at `$OMARCHY_PATH` — so
+there is nothing to download and it works offline.
+
+The shipped file is solid black on transparent, and no hue-based tint can move
+black anywhere. It is coloured instead by masking a rectangle of the current
+theme's own foreground with the logo's alpha, which means it follows a theme
+change with no per-theme asset. The brand page's pre-coloured variants
+(`omarchy-logo-rose-pine.svg` and friends) are pinned to one palette and would
+not do that.
+
+It holds the pill for 700 ms at the start of a scan — long enough to register,
+short enough that it is never standing between the user and their session —
+and the camera polling runs underneath it, so a frame is ready the instant the
+ring appears.
 
 ## The live view
 
