@@ -44,8 +44,10 @@ mirrors rather than one animated transition.
 `spring(response: 0.45, damping: 0.7)`), none closing (`damping: 1.0`).
 Arriving feels eager, leaving feels deliberate.
 
-Every corner radius is half the pill's height, so one number carries the shape
-from pill to capsule to circle as it grows and morphs.
+The mark is a square, so every footprint is a rounded square: the contracted
+bar, the open panel, the camera view and the progress outline share one corner
+treatment, stepped down by each inset so the radii stay concentric. The shape
+never changes as the pill grows — only its size does.
 
 ## The Omarchy mark
 

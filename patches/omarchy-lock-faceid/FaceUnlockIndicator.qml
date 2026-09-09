@@ -55,10 +55,12 @@ Item {
 
   // --- footprints ---------------------------------------------------------
   //
-  // Every radius is half the height, so one number changes the pill into a
-  // capsule and the capsule into a circle. The contracted size is deliberately
-  // narrower than any open one, so the growth is an event rather than a nudge
-  // (upstream's note on `pillClosedSize`).
+  // The mark is a square, so every footprint is a rounded square too — the
+  // contracted bar, the open panel, the camera view and the progress outline
+  // all share one corner treatment, and the shape never changes as the pill
+  // grows. The contracted size is deliberately narrower than any open one, so
+  // the growth is an event rather than a nudge (upstream's note on
+  // `pillClosedSize`).
   readonly property real closedWidth: 92
   readonly property real closedHeight: 26
   readonly property real markPanelWidth: 112
@@ -66,6 +68,15 @@ Item {
   readonly property real ringPanelSize: 80
   readonly property real ringSize: 64
   readonly property real previewInset: 4
+
+  //: Proportional to the short side, so the contracted bar and the open panel
+  //: read as the same shape rather than as a rounded rectangle turning into a
+  //: circle. Capped so the open square never rounds away into one.
+  readonly property real cornerRadius: Math.min(22, Math.min(width, height) * 0.32)
+  //: The inner radii are the outer one stepped down by each inset, so the
+  //: outline and the camera view stay concentric with the pill's own corners.
+  readonly property real ringCornerRadius: 11.5
+  readonly property real previewCornerRadius: 10
 
   //: The mark is square (icon.png is 300 x 300), so one number sizes it.
   readonly property real markHeight: 40
@@ -182,7 +193,7 @@ Item {
     x: shakeOffset
     property real shakeOffset: 0
 
-    radius: height / 2
+    radius: root.cornerRadius
     color: root.surfaceColor
     border.width: 1
     border.color: root.surfaceBorder
@@ -271,7 +282,7 @@ Item {
         layer.enabled: true
         layer.effect: MultiEffect {
           maskEnabled: true
-          maskSource: circleMask
+          maskSource: previewMask
           maskThresholdMin: 0.5
           maskSpreadAtMin: 0.08
         }
@@ -306,14 +317,14 @@ Item {
       }
 
       Item {
-        id: circleMask
+        id: previewMask
         anchors.fill: previewClip
         visible: false
         layer.enabled: true
 
         Rectangle {
           anchors.fill: parent
-          radius: width / 2
+          radius: root.previewCornerRadius
           color: "white"
         }
       }
@@ -333,8 +344,10 @@ Item {
         }
       }
 
-      // A faint full track and a bright arc that circles while scanning and
-      // closes into a complete ring on a verdict.
+      // A faint full track and a bright arc that travel the same rounded
+      // square, closing into a complete outline on a verdict. The sweep walks
+      // the perimeter by length rather than by angle, so it keeps one steady
+      // speed through the corners instead of racing them.
       Canvas {
         id: ring
         anchors.fill: parent
@@ -354,25 +367,92 @@ Item {
           running: root.showRing && root.scanning
         }
 
+        //: The outline as contiguous pieces, clockwise from the top centre,
+        //: each carrying its own length so a run of the whole can be picked
+        //: out of it by distance.
+        function outline(x, y, w, h, r) {
+          var segs = []
+          function line(x1, y1, x2, y2) {
+            var dx = x2 - x1, dy = y2 - y1
+            segs.push({ curved: false, x1: x1, y1: y1, x2: x2, y2: y2,
+                        len: Math.sqrt(dx * dx + dy * dy) })
+          }
+          function corner(cx, cy, a0) {
+            segs.push({ curved: true, cx: cx, cy: cy, r: r,
+                        a0: a0, a1: a0 + Math.PI / 2, len: r * Math.PI / 2 })
+          }
+          var mid = x + w / 2
+          line(mid, y, x + w - r, y)
+          corner(x + w - r, y + r, -Math.PI / 2)
+          line(x + w, y + r, x + w, y + h - r)
+          corner(x + w - r, y + h - r, 0)
+          line(x + w - r, y + h, x + r, y + h)
+          corner(x + r, y + h - r, Math.PI / 2)
+          line(x, y + h - r, x, y + r)
+          corner(x + r, y + r, Math.PI)
+          line(x + r, y, mid, y)
+          return segs
+        }
+
+        //: Strokes `length` of the outline starting `from` along it, wrapping
+        //: past the top centre as many times as it takes.
+        function trace(ctx, segs, total, from, length) {
+          ctx.beginPath()
+          var pos = ((from % total) + total) % total
+          var left = Math.min(length, total)
+          var started = false
+          var guard = 0
+          while (left > 0.01 && guard++ < 64) {
+            var acc = 0
+            for (var i = 0; i < segs.length; i++) {
+              var s = segs[i]
+              if (pos < acc + s.len - 0.001 || i === segs.length - 1) {
+                var head = pos - acc
+                var take = Math.min(s.len - head, left)
+                if (s.curved) {
+                  var da = s.a1 - s.a0
+                  var a0 = s.a0 + da * (head / s.len)
+                  var a1 = s.a0 + da * ((head + take) / s.len)
+                  if (!started)
+                    ctx.moveTo(s.cx + s.r * Math.cos(a0), s.cy + s.r * Math.sin(a0))
+                  ctx.arc(s.cx, s.cy, s.r, a0, a1)
+                } else {
+                  var t0 = head / s.len
+                  var t1 = (head + take) / s.len
+                  if (!started)
+                    ctx.moveTo(s.x1 + (s.x2 - s.x1) * t0, s.y1 + (s.y2 - s.y1) * t0)
+                  ctx.lineTo(s.x1 + (s.x2 - s.x1) * t1, s.y1 + (s.y2 - s.y1) * t1)
+                }
+                started = true
+                left -= take
+                pos += take
+                if (pos >= total) pos -= total
+                break
+              }
+              acc += s.len
+            }
+          }
+          ctx.stroke()
+        }
+
         onPaint: {
           var ctx = getContext("2d")
           ctx.reset()
-          var c = width / 2
-          var r = width / 2 - 2.5
+          var pad = 2.5
+          var segs = outline(pad, pad, width - pad * 2, height - pad * 2, root.ringCornerRadius)
+          var total = 0
+          for (var i = 0; i < segs.length; i++) total += segs[i].len
+
           var col = root.ringColor
           ctx.lineWidth = 2.5
           ctx.lineCap = "round"
+          ctx.lineJoin = "round"
 
-          ctx.beginPath()
-          ctx.arc(c, c, r, 0, Math.PI * 2)
           ctx.strokeStyle = Qt.rgba(col.r, col.g, col.b, 0.18)
-          ctx.stroke()
+          trace(ctx, segs, total, 0, total)
 
-          var start = (angle - 90) * Math.PI / 180
-          ctx.beginPath()
-          ctx.arc(c, c, r, start, start + sweep * Math.PI / 180)
           ctx.strokeStyle = col
-          ctx.stroke()
+          trace(ctx, segs, total, total * angle / 360, total * sweep / 360)
         }
       }
 
