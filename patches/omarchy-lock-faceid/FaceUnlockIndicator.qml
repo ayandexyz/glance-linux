@@ -63,9 +63,10 @@ Item {
   // `pillClosedSize`).
   readonly property real closedWidth: 92
   readonly property real closedHeight: 26
-  readonly property real markPanelWidth: 112
-  readonly property real markPanelHeight: 64
-  readonly property real ringPanelSize: 80
+  //: One open footprint for every stage. The mark, the camera view and the
+  //: verdict all sit in the same square, so the pill grows once on arrival and
+  //: then holds still — only its contents change.
+  readonly property real openSize: 80
   readonly property real ringSize: 64
   readonly property real previewInset: 4
 
@@ -78,8 +79,10 @@ Item {
   readonly property real ringCornerRadius: 11.5
   readonly property real previewCornerRadius: 10
 
-  //: The mark is square (icon.png is 300 x 300), so one number sizes it.
-  readonly property real markHeight: 40
+  //: The mark is square (icon.png is 300 x 300), so one number sizes it. It
+  //: fills the open square the way the camera view does, leaving the corners
+  //: as the only breathing room.
+  readonly property real markHeight: 52
   readonly property real markWidth: markHeight
 
   readonly property string omarchyPath: {
@@ -156,11 +159,8 @@ Item {
 
   // --- geometry -----------------------------------------------------------
 
-  readonly property real openWidth: markStage ? markPanelWidth : ringPanelSize
-  readonly property real openHeight: markStage ? markPanelHeight : ringPanelSize
-
-  width: expanded ? openWidth : closedWidth
-  height: expanded ? openHeight : closedHeight
+  width: expanded ? openSize : closedWidth
+  height: expanded ? openSize : closedHeight
   anchors.horizontalCenter: parent ? parent.horizontalCenter : undefined
   y: positioned ? topMargin : -height - 24
   opacity: positioned ? 1 : 0
