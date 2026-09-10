@@ -14,8 +14,8 @@ import "GlanceLogic.js" as GlanceLogic
 // running, PAM still talks to the daemon exactly the same.
 Ui.Panel {
   id: root
-  moduleName: "ayande.glance"
-  ipcTarget: "ayande.glance"
+  moduleName: "io.github.ayan-de.glance"
+  ipcTarget: "io.github.ayan-de.glance"
   manageIpc: false
 
   readonly property color foreground: bar ? bar.foreground : Color.foreground

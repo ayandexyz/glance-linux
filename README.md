@@ -67,7 +67,7 @@ packaging/install.sh                             # user service + plugin symlink
 glancectl enroll --gui --name "$USER" --remember # guided sweep, sets the passphrase
 glancectl authenticate                       # one full scan: recognition + liveness
 glancectl setup-pam                          # wire the lock screen (sudo; keep a root shell open)
-omarchy plugin enable ayande.glance          # the bar widget
+omarchy plugin enable io.github.ayan-de.glance          # the bar widget
 ```
 
 Lock the screen, press Enter (shell lock: any character then Enter), look at
