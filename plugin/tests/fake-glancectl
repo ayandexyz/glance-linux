@@ -7,7 +7,15 @@ cmd=${1:-}
 case $mode in
   crash) echo "boom" >&2; exit 3 ;;
   garbage) echo "<html>"; exit 0 ;;
+  # A megabyte of valid-looking JSON, at once: the backend must kill it at
+  # the cap and refuse to parse what it kept.
+  flood) head -c 1048576 /dev/zero | tr '\0' '{'; exit 0 ;;
 esac
+# What the plugin handed us for an environment, so tests/run can check that
+# PATH was pinned and the interpreter overrides were dropped.
+if [[ -n ${GLANCE_FAKE_ENV_MARKER:-} && $cmd == status ]]; then
+  printf 'PATH=%s\nPYTHONPATH=%s\nLD_PRELOAD=%s\n' "$PATH" "${PYTHONPATH-unset}" "${LD_PRELOAD-unset}" >"$GLANCE_FAKE_ENV_MARKER"
+fi
 case $cmd in
   enroll)
     # Records the argv it was handed, so the harness can prove the Enroll

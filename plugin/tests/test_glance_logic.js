@@ -9,7 +9,7 @@ const assert = require("assert")
 
 const source = fs.readFileSync(path.join(__dirname, "..", "GlanceLogic.js"), "utf8")
   .replace(/^\.pragma library\s*$/m, "")
-const G = vm.runInNewContext(source + "\n;({ parseStatus, stateLabel, nextStep, outcomeLabel, outcomeSeverity, missingModels, identityLine, elapsed, lastScanText, lastScanReason, parseActionResult, clamp, lockLabel, nextAction, launchCommand })")
+const G = vm.runInNewContext(source + "\n;({ parseStatus, stateLabel, nextStep, outcomeLabel, outcomeSeverity, missingModels, identityLine, elapsed, lastScanText, lastScanReason, parseActionResult, clamp, lockLabel, nextAction, launchCommand, pathSyntaxProblem, pathPrefixes, statCommand, checkBinary, appendCapped, childEnvironment, SYSTEMCTL, SETSID, LAUNCH_TERMINAL, STAT, DEFAULT_GLANCECTL, SAFE_PATH })")
 // Objects built inside the vm have a foreign Object prototype, which trips
 // deepStrictEqual; compare by value instead.
 function assertSame(actual, expected, message) {
@@ -51,7 +51,7 @@ const status = overrides => G.parseStatus(JSON.stringify({ ...online, ...overrid
 const action = (overrides, ctl, user) => G.nextAction(status(overrides), ctl || "glancectl", user || "$USER")
 
 test("next step is the single command that unblocks the user", () => {
-  assert.strictEqual(G.nextStep(status({ reachable: false })), "systemctl --user enable --now glanced")
+  assert.strictEqual(G.nextStep(status({ reachable: false })), "/usr/bin/systemctl --user enable --now glanced")
   assert.strictEqual(G.nextStep(status({ models: {} })), "glancectl fetch-model")
   assert.strictEqual(G.nextStep(status({ enrolled: false })), "glancectl enroll --name $USER --gui --remember")
   assert.strictEqual(G.nextStep(status({ armed: false })), "glancectl arm")
@@ -66,7 +66,7 @@ test("next action ranks the setup steps and stays runnable", () => {
 
   const start = action({ reachable: false })
   assert.strictEqual(start.key, "start")
-  assertSame(start.command, ["systemctl", "--user", "enable", "--now", "glanced"])
+  assertSame(start.command, ["/usr/bin/systemctl", "--user", "enable", "--now", "glanced"])
   // enable, not just start: the daemon has to come back after a reboot too.
   assert.ok(start.command.includes("--now") && start.command.includes("enable"))
   assert.strictEqual(start.terminal, false)
@@ -98,19 +98,19 @@ test("launch wrapping matches the shape of each step", () => {
 
   // sudo needs somewhere to be typed.
   assertSame(G.launchCommand(action({ pam: { module: true, wired: false } })),
-    ["omarchy-launch-terminal", "glancectl", "setup-pam"])
+    ["/usr/bin/omarchy-launch-terminal", "glancectl", "setup-pam"])
 
   // The download prints progress; give it a terminal to print into.
   assertSame(G.launchCommand(action({ models: {} })),
-    ["omarchy-launch-terminal", "glancectl", "fetch-model"])
+    ["/usr/bin/omarchy-launch-terminal", "glancectl", "fetch-model"])
 
   // Detached, so reloading the shell mid-sweep does not kill the window.
   assertSame(G.launchCommand(action({ enrolled: false }, "/opt/glancectl", "ayan")),
-    ["setsid", "--fork", "/opt/glancectl", "enroll", "--name", "ayan", "--gui", "--remember"])
+    ["/usr/bin/setsid", "--fork", "/opt/glancectl", "enroll", "--name", "ayan", "--gui", "--remember"])
 
   // Starting the daemon is quick and silent: no wrapper at all.
   assertSame(G.launchCommand(action({ reachable: false })),
-    ["systemctl", "--user", "enable", "--now", "glanced"])
+    ["/usr/bin/systemctl", "--user", "enable", "--now", "glanced"])
 })
 
 test("arming has no command because the passphrase must not reach argv", () => {
@@ -128,7 +128,7 @@ test("next action uses the glancectl the backend resolved, not the name", () => 
   // The command shown under the button is the command the button runs.
   assert.strictEqual(enroll.hint, enroll.command.join(" "))
   // Starting the daemon is systemd's job, never glancectl's.
-  assert.strictEqual(action({ reachable: false }, ctl).command[0], "systemctl")
+  assert.strictEqual(action({ reachable: false }, ctl).command[0], "/usr/bin/systemctl")
 })
 
 test("lock label reflects which PAM stack carries the module", () => {
@@ -191,6 +191,99 @@ test("clamp tolerates junk", () => {
   assert.strictEqual(G.clamp("x", 5, 600), 5)
   assert.strictEqual(G.clamp(9999, 5, 600), 600)
   assert.strictEqual(G.clamp(30, 5, 600), 30)
+})
+
+test("every fixed tool is an absolute path and nothing is left to PATH", () => {
+  for (const tool of [G.SYSTEMCTL, G.SETSID, G.LAUNCH_TERMINAL, G.STAT, G.DEFAULT_GLANCECTL]) {
+    assert.ok(tool.startsWith("/usr/bin/"), tool + " is not under /usr/bin")
+  }
+  // With no glancectl given, the packaged one is used — not a bare name.
+  assert.strictEqual(G.nextAction(status({ enrolled: false }), "", "ayan").command[0], "/usr/bin/glancectl")
+  // Every argv the plugin can produce starts with an absolute path.
+  for (const overrides of [{ reachable: false }, { models: {} }, { enrolled: false }, { pam: { module: true, wired: false } }]) {
+    const argv = G.launchCommand(G.nextAction(status(overrides), "/usr/bin/glancectl", "ayan"))
+    assert.ok(argv[0].startsWith("/"), JSON.stringify(argv) + " resolves through PATH")
+  }
+})
+
+test("path syntax: absolute, no relative or empty components, no control characters", () => {
+  assert.strictEqual(G.pathSyntaxProblem("/usr/bin/glancectl"), "")
+  assert.strictEqual(G.pathSyntaxProblem(""), "no path given")
+  assert.strictEqual(G.pathSyntaxProblem("glancectl"), "must be an absolute path")
+  assert.strictEqual(G.pathSyntaxProblem("~/glancectl"), "must be an absolute path")
+  assert.strictEqual(G.pathSyntaxProblem("/usr/../bin/glancectl"), "contains a relative path component")
+  assert.strictEqual(G.pathSyntaxProblem("/usr//bin/glancectl"), "contains an empty path component")
+  assert.strictEqual(G.pathSyntaxProblem("/usr/bin/glancectl/"), "contains an empty path component")
+  assert.strictEqual(G.pathSyntaxProblem("/usr/bin/glance\nctl"), "contains control characters")
+  assertSame(G.pathPrefixes("/usr/bin/glancectl"), ["/", "/usr", "/usr/bin", "/usr/bin/glancectl"])
+  assert.strictEqual(G.pathPrefixes("bin/glancectl"), null)
+  assert.strictEqual(G.statCommand("relative"), null)
+})
+
+test("the stat command reports every component and our own uid, without following symlinks", () => {
+  const argv = G.statCommand("/home/ayan/.venv/bin/glancectl")
+  assert.strictEqual(argv[0], "/usr/bin/stat")
+  assert.ok(!argv.includes("-L"), "must not dereference symlinks")
+  assertSame(argv.slice(3), ["/proc/self/status", "/", "/home", "/home/ayan", "/home/ayan/.venv", "/home/ayan/.venv/bin", "/home/ayan/.venv/bin/glancectl"])
+})
+
+const statLines = lines => "1000 444 regular empty file /proc/self/status\n" + lines.join("\n") + "\n"
+
+test("a binary is accepted only when every component is owned by root or us and writable by nobody else", () => {
+  const ok = G.checkBinary("/usr/bin/glancectl", statLines([
+    "0 755 directory /", "0 755 directory /usr", "0 755 directory /usr/bin", "0 755 regular file /usr/bin/glancectl"]))
+  assertSame(ok, { ok: true, reason: "" })
+
+  const venv = G.checkBinary("/home/ayan/venv/bin/glancectl", statLines([
+    "0 755 directory /", "0 755 directory /home", "1000 700 directory /home/ayan",
+    "1000 755 directory /home/ayan/venv", "1000 755 directory /home/ayan/venv/bin", "1000 755 regular file /home/ayan/venv/bin/glancectl"]))
+  assert.strictEqual(venv.ok, true, venv.reason)
+
+  // /tmp is world-writable: anyone could have put that file there.
+  const tmp = G.checkBinary("/tmp/glancectl", statLines(["0 755 directory /", "0 1777 directory /tmp", "1000 755 regular file /tmp/glancectl"]))
+  assert.strictEqual(tmp.ok, false)
+  assert.strictEqual(tmp.reason, "/tmp is writable by group or others")
+
+  // Another user's file, even if executable.
+  const other = G.checkBinary("/opt/glancectl", statLines(["0 755 directory /", "0 755 directory /opt", "1001 755 regular file /opt/glancectl"]))
+  assert.strictEqual(other.reason, "/opt/glancectl is owned by uid 1001, not root or you")
+
+  // A group-writable directory on the way.
+  const groupw = G.checkBinary("/srv/tools/glancectl", statLines(["0 755 directory /", "0 775 directory /srv", "0 755 directory /srv/tools", "0 755 regular file /srv/tools/glancectl"]))
+  assert.strictEqual(groupw.reason, "/srv is writable by group or others")
+
+  // Symlinks are named as such, whether a directory (/bin on merged-usr) or the file.
+  const bin = G.checkBinary("/bin/glancectl", statLines(["0 755 directory /", "0 777 symbolic link /bin", "0 755 regular file /bin/glancectl"]))
+  assert.strictEqual(bin.reason, "/bin is a symbolic link, not a directory")
+  const link = G.checkBinary("/usr/local/bin/glancectl", statLines(["0 755 directory /", "0 755 directory /usr", "0 755 directory /usr/local", "0 755 directory /usr/local/bin", "0 777 symbolic link /usr/local/bin/glancectl"]))
+  assert.strictEqual(link.reason, "/usr/local/bin/glancectl is a symbolic link, not a regular file")
+
+  // Not executable, or not there at all: stat prints nothing for a missing component.
+  const noexec = G.checkBinary("/usr/bin/glancectl", statLines(["0 755 directory /", "0 755 directory /usr", "0 755 directory /usr/bin", "0 644 regular file /usr/bin/glancectl"]))
+  assert.strictEqual(noexec.reason, "/usr/bin/glancectl is not executable")
+  const missing = G.checkBinary("/usr/bin/glancectl", statLines(["0 755 directory /", "0 755 directory /usr", "0 755 directory /usr/bin"]))
+  assert.strictEqual(missing.reason, "/usr/bin/glancectl does not exist")
+
+  // Garbage from stat, or no uid line, is a refusal — never a pass.
+  assert.strictEqual(G.checkBinary("/usr/bin/glancectl", "").ok, false)
+  assert.strictEqual(G.checkBinary("/usr/bin/glancectl", "0 755 directory /\n").ok, false)
+  assert.strictEqual(G.checkBinary("relative", statLines([])).ok, false)
+})
+
+test("output is capped live and the overflow is reported, not parsed", () => {
+  assertSame(G.appendCapped("", "abc", 10), { text: "abc", overflow: false })
+  assertSame(G.appendCapped("abc", "defgh", 8), { text: "abcdefgh", overflow: false })
+  assertSame(G.appendCapped("abc", "defghi", 8), { text: "abcdefgh", overflow: true })
+  assertSame(G.appendCapped("abcdefgh", "i", 8), { text: "abcdefgh", overflow: true })
+})
+
+test("the child environment pins PATH and drops interpreter and loader overrides", () => {
+  const env = G.childEnvironment()
+  assert.strictEqual(env.PATH, "/usr/bin:/usr/share/omarchy/bin")
+  for (const name of ["PYTHONPATH", "PYTHONHOME", "PYTHONSTARTUP", "LD_PRELOAD", "LD_LIBRARY_PATH", "LD_AUDIT"]) {
+    assert.strictEqual(env[name], null, name + " must be unset")
+  }
+  assert.strictEqual(env.PYTHONNOUSERSITE, "1")
 })
 
 let failed = 0

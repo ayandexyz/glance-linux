@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "io.github.ayan-de.glance",
   "name": "Glance Face Unlock",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "author": "Ayan De",
   "license": "MIT",
   "description": "Face unlock with liveness detection: armed state, enrolled identities, the last scan's verdict, and a test scan, in a native Omarchy bar panel.",
@@ -42,7 +42,7 @@
         "type": "string",
         "label": "glancectl path",
         "defaultValue": "",
-        "description": "Optional. Leave empty to find glancectl on PATH; set it to the venv binary for a source checkout (e.g. ~/glance-linux/.venv/bin/glancectl)."
+        "description": "Optional. Absolute path to glancectl; empty means /usr/bin/glancectl from the glanced package. It is checked before use: no symlinks, every directory and the file owned by you or root and writable by nobody else, the file regular and executable. For a source checkout give the venv binary in full, e.g. /home/you/glance-linux/.venv/bin/glancectl."
       }
     ]
   }

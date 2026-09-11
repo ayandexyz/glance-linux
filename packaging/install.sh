@@ -45,8 +45,10 @@ fi
 mkdir -p "$unit_dir" "$data_dir" "$HOME/.local/bin"
 chmod 700 "$data_dir"
 
-# ~/.local/bin is on the PATH the shell and terminals share; the venv is not.
-# A link there is what lets the plugin (and `glancectl` at a prompt) find it.
+# ~/.local/bin is on the PATH your terminals share; the venv is not. The link
+# is for `glancectl` at a prompt. The plugin does not use it: it runs only an
+# absolute path it has checked, and refuses symlinks, so it gets the venv
+# binary itself through its "glancectl path" setting (printed below).
 if [[ $glancectl != "$HOME/.local/bin/glancectl" ]]; then
   ln -sfn "$glancectl" "$HOME/.local/bin/glancectl"
   echo "link:    ~/.local/bin/glancectl -> $glancectl"
@@ -65,6 +67,7 @@ if (( want_plugin )); then
     omarchy-shell shell rescanPlugins 2>/dev/null || true
   fi
   echo "enable it with: omarchy plugin enable $plugin_id"
+  echo "then set the widget's 'glancectl path' setting to: $glancectl"
 fi
 
 echo

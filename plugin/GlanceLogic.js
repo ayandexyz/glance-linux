@@ -4,6 +4,26 @@
 // and the `authenticate --json` / `arm --json` results. No QML in here, so the
 // node tests in tests/ exercise exactly what the panel renders.
 
+// Every executable the plugin runs, by absolute path. Nothing is resolved
+// through PATH: a shell plugin runs as the user, and a shadowed `systemctl`
+// or `glancectl` earlier on an inherited PATH would otherwise run in place of
+// the real one, on the way to the interactive PAM setup step.
+var DEFAULT_GLANCECTL = "/usr/bin/glancectl"
+var SYSTEMCTL = "/usr/bin/systemctl"
+var SETSID = "/usr/bin/setsid"
+var LAUNCH_TERMINAL = "/usr/bin/omarchy-launch-terminal"
+var STAT = "/usr/bin/stat"
+
+// The PATH handed to children. glancectl's own subprocesses (sudo, make,
+// omarchy-apply-lock during setup-pam) resolve through this and nothing else.
+var SAFE_PATH = "/usr/bin:/usr/share/omarchy/bin"
+
+// Live ceilings on what a child may write before it is killed unread. A
+// status document is a few hundred bytes; a scan result is one line. The
+// timers bound how long a process may run, these bound how much it may say.
+var STDOUT_CAP = 64 * 1024
+var STDERR_CAP = 16 * 1024
+
 function clamp(value, low, high) {
   var n = Number(value)
   if (!isFinite(n)) return low
@@ -93,7 +113,7 @@ function stateLabel(status) {
 // `arm` alone has no command. The passphrase belongs in the panel's own field,
 // where it goes to stdin — never into an argv any other process can read.
 function nextAction(status, glancectl, user) {
-  var ctl = String(glancectl || "glancectl")
+  var ctl = String(glancectl || DEFAULT_GLANCECTL)
   function action(key, explain, label, icon, command, terminal, detached) {
     return {
       key: key,
@@ -109,7 +129,7 @@ function nextAction(status, glancectl, user) {
   if (!status) return null
   if (!status.reachable) {
     return action("start", "glanced is not running.", "Start daemon", "\udb80\udd0a",
-                  ["systemctl", "--user", "enable", "--now", "glanced"], false, false)
+                  [SYSTEMCTL, "--user", "enable", "--now", "glanced"], false, false)
   }
   var missing = missingModels(status)
   if (missing.length > 0) {
@@ -141,12 +161,12 @@ function launchCommand(action) {
   if (!action || !action.command) return null
   if (action.terminal) {
     // Omarchy's launcher already setsids into the user's chosen terminal.
-    return ["omarchy-launch-terminal"].concat(action.command)
+    return [LAUNCH_TERMINAL].concat(action.command)
   }
   if (action.detached) {
     // A new session leader outlives this plugin: reloading the shell must not
     // kill an enrollment half way through the sweep.
-    return ["setsid", "--fork"].concat(action.command)
+    return [SETSID, "--fork"].concat(action.command)
   }
   return action.command.slice()
 }
@@ -226,4 +246,113 @@ function parseActionResult(stdout, stderr, exitCode) {
   var message = String(stderr || "").trim() || String(stdout || "").trim()
   if (message === "") message = "glancectl exited with status " + exitCode
   return { ok: false, outcome: "", identity: "", reason: "", error: message }
+}
+
+// --- child processes: what may run, and how much it may say ----------------
+
+// Environment overrides for every child. PATH is pinned; interpreter and
+// loader overrides are dropped (null unsets), because glancectl is a Python
+// entry point and PYTHONPATH or LD_PRELOAD would let a user-writable file run
+// inside it. The rest of the session environment stays: the terminal launcher
+// and the enrollment window need the Wayland and D-Bus variables.
+function childEnvironment() {
+  return {
+    PATH: SAFE_PATH,
+    PYTHONPATH: null,
+    PYTHONHOME: null,
+    PYTHONSTARTUP: null,
+    PYTHONNOUSERSITE: "1",
+    PYTHONSAFEPATH: "1",
+    LD_PRELOAD: null,
+    LD_LIBRARY_PATH: null,
+    LD_AUDIT: null
+  }
+}
+
+// Why `path` cannot even be looked at, or "" if it is a plain absolute path.
+// Syntax only: what it points at is stat(1)'s business, below.
+function pathSyntaxProblem(path) {
+  var text = String(path || "")
+  if (text === "") return "no path given"
+  if (text.charAt(0) !== "/") return "must be an absolute path"
+  if (/[\x00-\x1f\x7f]/.test(text)) return "contains control characters"
+  var parts = text.split("/").slice(1)
+  for (var i = 0; i < parts.length; i++) {
+    if (parts[i] === "" ) return "contains an empty path component"
+    if (parts[i] === "." || parts[i] === "..") return "contains a relative path component"
+  }
+  return ""
+}
+
+// "/usr/bin/glancectl" -> ["/", "/usr", "/usr/bin", "/usr/bin/glancectl"].
+// Null when the syntax is unacceptable.
+function pathPrefixes(path) {
+  if (pathSyntaxProblem(path) !== "") return null
+  var parts = String(path).split("/").slice(1)
+  var prefixes = ["/"]
+  var acc = ""
+  for (var i = 0; i < parts.length; i++) {
+    acc += "/" + parts[i]
+    prefixes.push(acc)
+  }
+  return prefixes
+}
+
+// One stat(1) invocation that reports every component of `path` plus the
+// caller's own uid: /proc/self/status is a regular file owned by whoever runs
+// stat, so the uid comes from the kernel rather than from an inherited
+// environment variable. No -L: a symlink anywhere shows up as one and is
+// refused, so the checked path is the executed path.
+function statCommand(path) {
+  var prefixes = pathPrefixes(path)
+  if (!prefixes) return null
+  return [STAT, "-c", "%u %a %F %n", "/proc/self/status"].concat(prefixes)
+}
+
+function parseStatLine(line) {
+  var match = /^(\d+) ([0-7]+) ([a-z ]+?) (\/.*)$/.exec(line)
+  if (!match) return null
+  return { uid: Number(match[1]), mode: parseInt(match[2], 8), type: match[3], name: match[4] }
+}
+
+// The verdict on `path` given stat's stdout. Every directory on the way must
+// be owned by root or by us and writable by neither group nor others; the
+// file itself the same, regular, and executable. Anything else, including a
+// component that is a symlink, is a reason to refuse, and the reason names
+// the component so the user can see what to fix.
+function checkBinary(path, statOutput) {
+  var prefixes = pathPrefixes(path)
+  if (!prefixes) return { ok: false, reason: String(path) + ": " + pathSyntaxProblem(path) }
+  var lines = String(statOutput || "").split("\n").filter(function(l) { return l !== "" })
+  if (lines.length === 0) return { ok: false, reason: "could not inspect " + path }
+  var self = parseStatLine(lines[0])
+  if (!self || self.name !== "/proc/self/status") return { ok: false, reason: "could not determine own uid" }
+  var uid = self.uid
+  var byName = {}
+  for (var i = 1; i < lines.length; i++) {
+    var entry = parseStatLine(lines[i])
+    if (entry) byName[entry.name] = entry
+  }
+  for (var j = 0; j < prefixes.length; j++) {
+    var name = prefixes[j]
+    var info = byName[name]
+    var last = j === prefixes.length - 1
+    if (!info) return { ok: false, reason: name + " does not exist" }
+    var want = last ? "regular file" : "directory"
+    if (info.type !== want) return { ok: false, reason: name + " is a " + info.type + ", not a " + want }
+    if (info.uid !== 0 && info.uid !== uid) return { ok: false, reason: name + " is owned by uid " + info.uid + ", not root or you" }
+    if ((info.mode & 0o022) !== 0) return { ok: false, reason: name + " is writable by group or others" }
+    if (last && (info.mode & 0o111) === 0) return { ok: false, reason: name + " is not executable" }
+  }
+  return { ok: true, reason: "" }
+}
+
+// Append `data` to `current` under `cap`. Once the cap is crossed the caller
+// kills the process and never parses `text`; what is kept is only so an
+// error message can quote the start of it.
+function appendCapped(current, data, cap) {
+  var text = String(current || "")
+  var chunk = String(data || "")
+  if (text.length + chunk.length <= cap) return { text: text + chunk, overflow: false }
+  return { text: text + chunk.slice(0, Math.max(0, cap - text.length)), overflow: true }
 }

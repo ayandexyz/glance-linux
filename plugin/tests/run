@@ -3,7 +3,11 @@ set -euo pipefail
 
 plugin_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 shell_root=${OMARCHY_PATH:-/usr/share/omarchy}/shell
-test_root=$(mktemp -d)
+# Not /tmp: the backend refuses a glancectl under a world-writable directory,
+# which is the point, so the fakes live somewhere only this user can write.
+private_tmp=${XDG_RUNTIME_DIR:-$HOME/.cache}
+mkdir -p "$private_tmp"
+test_root=$(mktemp -d -p "$private_tmp" glance-plugin-test.XXXXXX)
 trap 'rm -rf -- "$test_root"' EXIT
 
 echo "== GlanceLogic unit tests =="
@@ -64,6 +68,10 @@ make_wrapper fake-offline offline
 make_wrapper fake-garbage garbage
 make_wrapper fake-crash crash
 make_wrapper fake-fresh fresh
+make_wrapper fake-flood flood
+# The same fake under a world-writable directory: must be refused unrun.
+mkdir -m 777 "$test_root/open"
+cp "$test_root/fake-online" "$test_root/open/glancectl"
 
 export GLANCE_TEST_RESULT="$test_root/result.json"
 export GLANCE_PANEL_URL="file://$run_root/Panel.qml"
@@ -73,7 +81,13 @@ export GLANCE_FAKE_OFFLINE="$test_root/fake-offline"
 export GLANCE_FAKE_GARBAGE="$test_root/fake-garbage"
 export GLANCE_FAKE_CRASH="$test_root/fake-crash"
 export GLANCE_FAKE_FRESH="$test_root/fake-fresh"
+export GLANCE_FAKE_FLOOD="$test_root/fake-flood"
+export GLANCE_FAKE_OPEN="$test_root/open/glancectl"
 export GLANCE_FAKE_MARKER="$test_root/enroll-argv"
+export GLANCE_FAKE_ENV_MARKER="$test_root/env"
+# Canaries: the plugin must not pass these through to what it runs.
+export PYTHONPATH=/nonexistent/canary
+export PATH="$test_root/shadow:$PATH"
 
 log="$test_root/quickshell.log"
 if ! timeout 90 quickshell --path "$run_root/shell.qml" >"$log" 2>&1; then
@@ -106,6 +120,17 @@ if [[ $actual != "$expected" ]]; then
   exit 1
 fi
 echo "Enroll launch: reached glancectl as '$actual'"
+
+# The environment the fake saw: PATH pinned, PYTHONPATH gone.
+if [[ ! -f $GLANCE_FAKE_ENV_MARKER ]]; then
+  echo "  FAIL: no environment recorded" >&2; exit 1
+fi
+if ! grep -qx 'PATH=/usr/bin:/usr/share/omarchy/bin' "$GLANCE_FAKE_ENV_MARKER" \
+   || ! grep -qx 'PYTHONPATH=unset' "$GLANCE_FAKE_ENV_MARKER" \
+   || ! grep -qx 'LD_PRELOAD=unset' "$GLANCE_FAKE_ENV_MARKER"; then
+  echo "  FAIL: child environment not controlled:" >&2; cat "$GLANCE_FAKE_ENV_MARKER" >&2; exit 1
+fi
+echo "Child environment: PATH pinned, PYTHONPATH and LD_PRELOAD dropped"
 
 echo
 echo "all tests passed"

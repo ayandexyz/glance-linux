@@ -20,6 +20,35 @@ Presentation only, by construction: everything the panel does is a `glancectl`
 invocation run as you. Nothing here is on the unlock path, and if the shell is
 not running PAM talks to the daemon exactly the same.
 
+## What it runs, and how
+
+A shell plugin runs unsandboxed as you, so the process boundary is where the
+care goes. Three rules hold for every child process:
+
+- **Absolute paths only.** `/usr/bin/glancectl`, `/usr/bin/systemctl`,
+  `/usr/bin/setsid`, `/usr/bin/omarchy-launch-terminal`, `/usr/bin/stat`.
+  Nothing is resolved through `PATH`, so a shadowed executable earlier on an
+  inherited `PATH` cannot stand in for the real one.
+- **The glancectl it runs is checked first.** Whether the default or the
+  path you set, it goes through one `stat(1)` call over every component
+  before its first use, and is refused unless it is absolute, contains no
+  symlinks, every directory and the file are owned by root or by you and
+  writable by nobody else, and the file is regular and executable. The panel
+  prints the component that failed. `stat` also reports the plugin's own uid
+  from `/proc/self/status`, so the check trusts the kernel, not `$HOME` or
+  `$USER`.
+- **Children get a pinned environment and a byte ceiling.** `PATH` is set to
+  `/usr/bin:/usr/share/omarchy/bin` and `PYTHONPATH`, `PYTHONHOME`,
+  `PYTHONSTARTUP`, `LD_PRELOAD`, `LD_LIBRARY_PATH` and `LD_AUDIT` are
+  unset, because `glancectl` is a Python entry point and `setup-pam` runs
+  `sudo`. stdout is capped at 64 KiB and stderr at 16 KiB per process; a
+  child that writes more is killed at once and what it wrote is discarded
+  rather than parsed or rendered.
+
+All of this is exercised in `tests/run` against a fake glancectl: a flooding
+one, one under a world-writable directory, a relative path, and a planted
+`PYTHONPATH` that must not reach the child.
+
 ## Requirements
 
 This widget is a front end. On its own it draws a panel that says
@@ -64,9 +93,11 @@ packaging/install.sh
 omarchy plugin enable io.github.ayan-de.glance
 ```
 
-If `glancectl` is not on the shell's PATH — a checkout keeps it in `.venv/bin/`
-— set **glancectl path** in the widget's settings to that binary. Every button
-then runs the glancectl you pointed at, not whatever is on PATH.
+Then set **glancectl path** in the widget's settings to the venv binary,
+spelled out in full: `/home/you/glance-linux/.venv/bin/glancectl`. Not `~`,
+and not the `~/.local/bin/glancectl` link that `install.sh` makes for your
+prompt, because the check above refuses symlinks. Every button then runs the
+glancectl you pointed at and nothing else.
 
 ## Remove
 
@@ -86,7 +117,7 @@ the daemon alone: nothing about your enrollment, your PAM stack, or the
 | key | default | meaning |
 |---|---|---|
 | `refreshIntervalSec` | 30 | idle poll interval; the panel also refreshes on open and after every action |
-| `glancectlPath` | `""` (PATH) | path to `glancectl` |
+| `glancectlPath` | `""` (`/usr/bin/glancectl`) | absolute path to `glancectl`; checked as described above before it is run |
 
 ## IPC
 
@@ -105,7 +136,8 @@ tests/run
 Runs the `GlanceLogic.js` unit tests under node, `omarchy plugin validate`,
 qmllint, and a headless Quickshell harness that instantiates the real panel and
 backend against `tests/fake-glancectl` — so the process bridge, the stdin
-passphrase hand-off, and the status contract are exercised for real.
+passphrase hand-off, the status contract, the binary check, the output caps
+and the child environment are exercised for real.
 
 ## License
 

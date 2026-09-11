@@ -17,6 +17,8 @@ ShellRoot {
   readonly property string fakeGarbage: Quickshell.env("GLANCE_FAKE_GARBAGE")
   readonly property string fakeCrash: Quickshell.env("GLANCE_FAKE_CRASH")
   readonly property string fakeFresh: Quickshell.env("GLANCE_FAKE_FRESH")
+  readonly property string fakeFlood: Quickshell.env("GLANCE_FAKE_FLOOD")
+  readonly property string fakeOpen: Quickshell.env("GLANCE_FAKE_OPEN")
 
   property var failures: []
   property var widget: null
@@ -26,6 +28,9 @@ ShellRoot {
   property var crash: null
   property var missing: null
   property var fresh: null
+  property var flood: null
+  property var open: null
+  property var relative: null
   property int phase: 0
   property int waits: 0
 
@@ -52,7 +57,7 @@ ShellRoot {
     return backend
   }
 
-  function settled(backend) { return backend && !backend.loading && (backend.status !== null || backend.fetchError !== "") }
+  function settled(backend) { return backend && !backend.loading && (backend.status !== null || backend.fetchError !== "" || backend.binaryMissing) }
 
   function finish() {
     poll.stop()
@@ -85,6 +90,9 @@ ShellRoot {
     crash = backendWith(fakeCrash, "crash backend")
     missing = backendWith("/nonexistent/glancectl", "missing backend")
     fresh = backendWith(fakeFresh, "fresh backend")
+    flood = backendWith(fakeFlood, "flood backend")
+    open = backendWith(fakeOpen, "world-writable backend")
+    relative = backendWith("tests/fake-glancectl", "relative backend")
     poll.start()
   }
 
@@ -101,7 +109,8 @@ ShellRoot {
       }
 
       if (root.phase === 0) {
-        if (!(settled(root.online) && settled(root.offline) && settled(root.garbage) && settled(root.crash) && settled(root.missing) && settled(root.fresh))) return
+        if (!(settled(root.online) && settled(root.offline) && settled(root.garbage) && settled(root.crash) && settled(root.missing)
+              && settled(root.fresh) && settled(root.flood) && settled(root.open) && settled(root.relative))) return
 
         assertTrue(root.widget !== null, "panel instantiated")
         if (root.widget) {
@@ -120,6 +129,21 @@ ShellRoot {
         assertTrue(root.garbage.fetchError.indexOf("unreadable") >= 0, "garbage: flagged as unreadable, got: " + root.garbage.fetchError)
         assertTrue(root.crash.fetchError.indexOf("status 3") >= 0, "crash: exit status surfaced, got: " + root.crash.fetchError)
         assertEqual(root.missing.binaryMissing, true, "missing: binary flagged")
+        assertTrue(root.missing.binaryProblem.indexOf("does not exist") >= 0, "missing: reason names it, got: " + root.missing.binaryProblem)
+
+        // A megabyte in one go: killed at the cap, never parsed.
+        assertTrue(root.flood.status === null, "flood: nothing parsed")
+        assertTrue(root.flood.fetchError.indexOf("output discarded") >= 0, "flood: overflow reported, got: " + root.flood.fetchError)
+
+        // The right file in the wrong place is refused before it runs.
+        assertEqual(root.open.binaryMissing, true, "open: refused")
+        assertTrue(root.open.binaryProblem.indexOf("writable by group or others") >= 0, "open: reason is the directory, got: " + root.open.binaryProblem)
+        assertTrue(root.open.status === null, "open: never ran")
+        assertTrue(root.open.nextAction === null, "open: nothing offered")
+
+        // A relative path never reaches stat, let alone exec.
+        assertEqual(root.relative.binaryMissing, true, "relative: refused")
+        assertTrue(root.relative.binaryProblem.indexOf("absolute") >= 0, "relative: reason, got: " + root.relative.binaryProblem)
 
         // A fully wired daemon has nothing left to ask of the user.
         assertEqual(root.online.nextAction, null, "online: no setup step outstanding")
@@ -129,7 +153,7 @@ ShellRoot {
         assertTrue(root.offline.nextAction !== null, "offline: a setup step is offered")
         if (root.offline.nextAction) {
           assertEqual(root.offline.nextAction.key, "start", "offline: step is to start the daemon")
-          assertEqual(root.offline.nextAction.command[0], "systemctl", "offline: started by systemd")
+          assertEqual(root.offline.nextAction.command[0], "/usr/bin/systemctl", "offline: started by systemd, by absolute path")
         }
 
         // A fresh install: reachable, models present, nobody enrolled. The

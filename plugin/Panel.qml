@@ -360,7 +360,9 @@ Ui.Panel {
           font.pixelSize: Style.font.bodySmall
         }
 
-        // The one failure a user fixes by installing something.
+        // The one failure a user fixes by installing something or by pointing
+        // the setting at a binary the backend will accept. The reason names
+        // the component that failed, so there is nothing to guess at.
         Column {
           width: parent.width
           spacing: Style.spacing.xs
@@ -368,7 +370,7 @@ Ui.Panel {
 
           Text {
             width: parent.width
-            text: "glancectl was not found"
+            text: "glancectl is not usable"
             color: root.urgent
             wrapMode: Text.WordWrap
             font.family: root.fontFamily
@@ -378,7 +380,17 @@ Ui.Panel {
 
           Text {
             width: parent.width
-            text: "Set 'glancectl path' in the widget settings, or put glancectl on PATH."
+            visible: backend.binaryProblem !== ""
+            text: backend.binaryProblem
+            color: root.foreground
+            wrapMode: Text.WrapAnywhere
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.caption
+          }
+
+          Text {
+            width: parent.width
+            text: "Install the glanced package, or set 'glancectl path' in the widget settings to the absolute path of a glancectl owned by you or root."
             color: root.dim
             wrapMode: Text.WordWrap
             font.family: root.fontFamily
