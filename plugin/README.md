@@ -1,5 +1,7 @@
 # Glance — Omarchy bar widget
 
+![The Glance panel beside the lock screen's face unlock indicator](preview.png)
+
 The shell half of [glance-linux](https://github.com/ayan-de/glance-linux): one
 bar icon and one panel for the `glanced` face-unlock daemon.
 

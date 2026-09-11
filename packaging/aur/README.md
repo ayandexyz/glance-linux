@@ -45,7 +45,10 @@ that `sufficient` ignores, and falls through to the password.
        git push git@github.com:ayan-de/omarchy-glance.git omarchy-glance:main
 
    Every install line in the docs points at that repo, so this happens before
-   anything else is announced.
+   anything else is announced. `plugin/preview.png` rides along and lands at
+   the root, which is where the marketplace looks for the one preview image
+   it accepts (`preview.png`, any size; it makes its own card and detail
+   sizes).
 
 1. Tag the daemon repo and push the tag:
 

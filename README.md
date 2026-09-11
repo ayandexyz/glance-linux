@@ -3,6 +3,8 @@
 Face unlock for Linux, with the liveness detection that face-unlock on Linux
 usually doesn't have.
 
+![The lock screen's face unlock indicator and the Glance bar panel](plugin/preview.png)
+
 A reimplementation of the liveness model from
 [Glance](https://github.com/jonnyoo/glance) (macOS, MIT) around a PAM-based
 unlock path. Not a port of the app — none of the Swift is portable — but the
