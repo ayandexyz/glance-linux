@@ -51,7 +51,28 @@ convenience feature, not a security upgrade.
 | Omarchy plugin (`plugin/`) | Bar widget + panel — see `plugin/README.md` |
 | Lock screen indicator (`patches/omarchy-lock-faceid/`) | Face ID-style capsule with a live camera view — a patch to Omarchy's lock plugin |
 
-## Setup
+## Install
+
+Once `glanced` is on the AUR, the packaged path is two commands and three
+buttons — the package carries the daemon, the PAM module and both models, so
+there is nothing to download and nothing to build:
+
+```bash
+yay -S glanced
+omarchy plugin add https://github.com/ayan-de/omarchy-glance.git --enable
+```
+
+Then click the bar icon and take the one button it offers, three times: **Start
+daemon**, **Enroll** (the guided sweep opens in a window), **Wire lock screen**
+(a terminal, for the one step that needs your password). `packaging/aur/` holds
+the PKGBUILD and the release runbook.
+
+The package deliberately does not touch `/etc/pam.d` itself. Changing how the
+machine authenticates you belongs to a command you run and watch, not to an
+unattended pacman transaction editing files that belong to hyprland and
+omarchy.
+
+## Setup from source
 
 ```bash
 python -m venv .venv && .venv/bin/pip install -e '.[runtime,gui,dev]'
