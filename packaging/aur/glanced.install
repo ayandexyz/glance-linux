@@ -1,0 +1,65 @@
+# This package deliberately does not touch /etc/pam.d. Wiring a lock screen is
+# a change to how the machine authenticates you, and it belongs to a command
+# the user runs and watches -- not to an unattended pacman transaction editing
+# files owned by hyprland and omarchy.
+
+post_install() {
+  cat <<'MSG'
+
+glanced is installed. Three steps to a working face unlock:
+
+  systemctl --user enable --now glanced
+  glancectl enroll --name "$USER" --gui --remember
+  glancectl setup-pam                    # asks for your password; edits /etc/pam.d
+
+Or install the Omarchy widget and press the button it offers for each:
+
+  omarchy plugin add https://github.com/ayan-de/omarchy-glance.git --enable
+
+Both models are already on disk in /usr/share/glanced/models; there is nothing
+to download. `glancectl status` explains whatever is still missing.
+
+MSG
+}
+
+post_upgrade() {
+  # The module keeps its path, so an upgrade never invalidates a wired stack.
+  # Reload it by locking and unlocking once; nothing needs re-running.
+  if grep -qs pam_glance.so /etc/pam.d/*; then
+    echo "glanced: your lock screen stays wired; the new module is in place."
+  else
+    post_install
+  fi
+}
+
+pre_remove() {
+  if grep -qs pam_glance.so /etc/pam.d/*; then
+    cat <<'MSG'
+
+glanced: your PAM stacks still have a pam_glance.so line, and this removes the
+module they name.
+
+You will NOT be locked out. The line is `auth sufficient`, so PAM treats a
+module it cannot load as a failure that `sufficient` ignores, and falls through
+to your password as usual.
+
+To clean the stale line up, run this BEFORE removing the package:
+
+  glancectl setup-pam --remove
+
+Otherwise remove the pam_glance.so lines by hand from the files under
+/etc/pam.d that name them. Backups made at wiring time are alongside them,
+suffixed .glance-backup.
+
+MSG
+  fi
+}
+
+post_remove() {
+  cat <<'MSG'
+
+glanced is gone. Your enrollment was not touched -- it is encrypted at
+~/.local/share/glance. Delete that directory to remove your face data.
+
+MSG
+}

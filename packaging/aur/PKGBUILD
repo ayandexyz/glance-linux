@@ -1,0 +1,89 @@
+# Maintainer: Ayan De <sayandedotcom@gmail.com>
+
+pkgname=glanced
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Face unlock for Linux with real liveness detection"
+arch=('x86_64')
+url="https://github.com/ayan-de/glance-linux"
+license=('MIT')
+
+# python-onnxruntime is a virtual name: python-onnxruntime-cpu provides it, and
+# so do the CUDA and ROCm builds. Depending on the virtual leaves a user who
+# already runs the GPU flavour alone instead of pulling a second copy.
+depends=(
+  'python'
+  'python-numpy'
+  'python-opencv'
+  'python-onnxruntime'
+  'python-mediapipe'
+  'python-cryptography'
+  'pyside6'
+  'pam'
+)
+makedepends=('python-build' 'python-installer' 'python-wheel' 'python-setuptools')
+checkdepends=('python-pytest')
+optdepends=('omarchy: bar widget and panel, via `omarchy plugin add`')
+install="$pkgname.install"
+
+# The two networks are not vendored: the landmarker is Google's, the recognizer
+# is InsightFace's. Fetching them here rather than at first run means makepkg
+# checksums them, the install works offline afterwards, and the user never
+# waits on a download to enroll.
+#
+# buffalo_s.zip is 127MB for the 13MB model inside it; upstream publishes no
+# smaller artifact. makepkg caches it, so that cost is paid once.
+source=(
+  "$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz"
+  "face_landmarker.task::https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task"
+  "buffalo_s.zip::https://github.com/deepinsight/insightface/releases/download/v0.7/buffalo_s.zip"
+)
+sha256sums=(
+  'SKIP'  # replace with the tarball's checksum once v0.1.0 is tagged
+  '64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff'
+  'd85a87f503f691807cd8bb97128bdf7a0660326cd9cd02657127fa978bab8b5e'
+)
+
+build() {
+  cd "glance-linux-$pkgver"
+  python -m build --wheel --no-isolation
+  # The PAM module is 200 lines of C and links only libpam.
+  make -C pam
+}
+
+check() {
+  cd "glance-linux-$pkgver"
+  # The liveness model, the PAM-stack text transforms, the model search
+  # order and the passphrase routing need nothing but numpy, so they run in a
+  # build chroot with no camera and no display.
+  python -m pytest tests/test_liveness.py tests/test_pamsetup.py tests/test_paths.py \
+    tests/test_enroll_passphrase.py -q
+}
+
+package() {
+  cd "glance-linux-$pkgver"
+
+  python -m installer --destdir="$pkgdir" dist/*.whl
+
+  # /usr/lib/security is where PAM looks; the module is never setuid and
+  # refuses to run in a setuid context regardless.
+  make -C pam install DESTDIR="$pkgdir" LIBDIR=/usr/lib/security
+
+  # A read-only system copy of each model. `glancectl fetch-model` still works
+  # and its result takes precedence, so a user is never stuck with ours.
+  install -Dm644 "$srcdir/face_landmarker.task" \
+    "$pkgdir/usr/share/$pkgname/models/face_landmarker.task"
+  install -Dm644 "$srcdir/w600k_mbf.onnx" \
+    "$pkgdir/usr/share/$pkgname/models/arcface.onnx"
+
+  # The shipped unit points at a checkout's binary; the packaged one is on PATH.
+  sed 's|^ExecStart=.*|ExecStart=/usr/bin/glancectl daemon --mode light|' \
+    packaging/systemd/glanced.service \
+    > "$srcdir/glanced.service.packaged"
+  install -Dm644 "$srcdir/glanced.service.packaged" \
+    "$pkgdir/usr/lib/systemd/user/glanced.service"
+
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  install -Dm644 NOTICE "$pkgdir/usr/share/licenses/$pkgname/NOTICE"
+  install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
+}
