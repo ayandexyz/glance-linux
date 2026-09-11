@@ -1,4 +1,4 @@
-# Glance — Omarchy bar widget
+# Glance Face Unlock — Omarchy bar widget
 
 ![The Glance panel beside the lock screen's face unlock indicator](preview.png)
 

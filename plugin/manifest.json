@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "id": "io.github.ayan-de.glance",
-  "name": "Glance",
-  "version": "0.1.0",
+  "name": "Glance Face Unlock",
+  "version": "0.1.1",
   "author": "Ayan De",
   "license": "MIT",
   "description": "Face unlock with liveness detection: armed state, enrolled identities, the last scan's verdict, and a test scan, in a native Omarchy bar panel.",
@@ -13,7 +13,7 @@
     "barWidget": "Panel.qml"
   },
   "barWidget": {
-    "displayName": "Glance",
+    "displayName": "Glance Face Unlock",
     "description": "One bar icon and one panel for the glanced face-unlock daemon: whether it is armed, who is enrolled, what the last scan decided and why, plus arm, disarm and test-scan actions.",
     "category": "System",
     "aliases": [
