@@ -24,7 +24,8 @@ import qs.Commons
 //   hidden   -> parked above the top edge, contracted
 //   scanning -> slides in, springs open on the mark, then morphs to the ring
 //               and the live camera view
-//   success  -> the sweep closes into a full ring, the tick pops
+//   success  -> the sweep closes into a full ring, the sphere spins inside
+//               it, the tick pops
 //   failure  -> the ring turns to the error colour and the pill shakes once
 Item {
   id: root
@@ -126,6 +127,19 @@ Item {
 
   property bool hasPreview: false
 
+  //: The success beat between the ring closing and the tick: the Face ID
+  //: sphere from the macOS app's unlock video, spinning once inside the
+  //: ring. The tick waits for it. A failure has nothing to wait for.
+  property bool spinning: false
+  property bool tickPending: false
+
+  function finishSpin() {
+    spinning = false
+    if (!tickPending) return
+    tickPending = false
+    pop.restart()
+  }
+
   // --- the two timelines --------------------------------------------------
 
   property bool positioned: false
@@ -156,6 +170,13 @@ Item {
   Timer { id: expandDelay; interval: 160; onTriggered: { root.growEasing = Easing.OutBack; root.expanded = true } }
   Timer { id: slideDelay; interval: 180; onTriggered: root.positioned = false }
   Timer { id: markTimer; interval: 750; onTriggered: root.markStage = false }
+  //: Just short of the sweep's own 380ms, so the sphere is already turning
+  //: as the outline completes rather than starting from a finished circle.
+  Timer {
+    id: spinDelay
+    interval: 340
+    onTriggered: if (root.tickPending) { root.spinning = true; spin.restart() }
+  }
 
   onShownChanged: runChoreography()
   onExpandedChanged: if (expanded && markStage) markTimer.restart()
@@ -174,7 +195,15 @@ Item {
     if (!scanning) hasPreview = false
     if (phase !== "hidden") litPhase = phase
     if (phase === "failure") shake.restart()
-    if (phase === "success") pop.restart()
+    if (phase === "success") {
+      tickPending = true
+      spinDelay.restart()
+    } else {
+      tickPending = false
+      spinDelay.stop()
+      spinning = false
+      spin.stop()
+    }
     ring.requestPaint()
   }
   onRingColorChanged: ring.requestPaint()
@@ -377,6 +406,35 @@ Item {
         }
       }
 
+      // The sphere. Frames 16-45 of `unlockanimation.mp4` from the macOS
+      // app, cut to the inside of its circle — the outline here is the
+      // Canvas below, closing on its own — and kept as white on alpha, so
+      // it takes the theme's colour the way the ring does.
+      AnimatedSprite {
+        id: spin
+        anchors.centerIn: parent
+        // The sheet's frame is 340 across with the video's ring 317 across
+        // inside it; the badge's outline is the ring size less the padding.
+        // Sized so the two circles coincide.
+        width: (root.ringSize - 5) * (340 / 317)
+        height: width
+        source: Qt.resolvedUrl("unlock-spin.png")
+        frameCount: 30
+        frameWidth: 128
+        frameHeight: 128
+        frameRate: 60
+        loops: 1
+        running: false
+        interpolate: false
+        visible: root.spinning
+        layer.enabled: true
+        layer.effect: MultiEffect {
+          colorization: 1.0
+          colorizationColor: root.ringColor
+        }
+        onFinished: root.finishSpin()
+      }
+
       // A faint full track and a bright arc that travel the same rounded
       // square, closing into a complete outline on a verdict. The sweep walks
       // the perimeter by length rather than by angle, so it keeps one steady
@@ -504,7 +562,8 @@ Item {
       Text {
         id: glyphText
         anchors.centerIn: parent
-        text: root.litPhase === "success" ? "󰄬" : (root.litPhase === "failure" ? "󰅖" : "󰱻")
+        text: root.litPhase === "success" && !root.tickPending ? "󰄬"
+          : (root.litPhase === "failure" ? "󰅖" : "󰱻")
         color: root.ringColor
         font.family: Style.font.family
         font.pixelSize: Math.round(root.ringSize * 0.46)
@@ -512,8 +571,9 @@ Item {
         verticalAlignment: Text.AlignVCenter
         // Stands in for the live view until a frame lands, and takes the
         // circle back for the verdict. Drawn after the view, so it has to
-        // reach zero rather than merely dim.
-        opacity: root.showGlyph ? root.pulseOpacity : 0
+        // reach zero rather than merely dim. On a success it leaves while
+        // the sphere spins and returns as the tick.
+        opacity: root.showGlyph && !root.tickPending ? root.pulseOpacity : 0
         scale: root.popScale * root.pulseScale
         Behavior on color { ColorAnimation { duration: 200 } }
         Behavior on opacity { NumberAnimation { duration: 200 } }

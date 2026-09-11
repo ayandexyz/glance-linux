@@ -530,9 +530,11 @@ Item {
     onTriggered: if (root.lockRequested && root.faceState === "scanning") root.showFaceSuccess()
   }
 
+  // Long enough that the tick, which now arrives after the sphere's spin,
+  // is read on the desktop rather than glimpsed.
   Timer {
     id: afterglowHoldTimer
-    interval: 900
+    interval: 1200
     repeat: false
     onTriggered: root.endAfterglow()
   }

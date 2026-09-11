@@ -5,5 +5,5 @@ if (( EUID != 0 )); then echo "run with sudo: sudo $0" >&2; exit 1; fi
 for f in LockView.qml Service.qml; do
   [[ -f $lock/$f.orig ]] && mv -f "$lock/$f.orig" "$lock/$f"
 done
-rm -f "$lock/FaceUnlockIndicator.qml"
+rm -f "$lock/FaceUnlockIndicator.qml" "$lock/unlock-spin.png"
 echo "restored $lock. Now, as your user: omarchy-restart-shell"

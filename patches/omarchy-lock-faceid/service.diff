@@ -200,7 +200,7 @@
      }
  
      MouseArea {
-@@ -321,23 +473,86 @@
+@@ -321,23 +473,88 @@
      config: "omarchy-lock-password"
      user: root.userName
  
@@ -267,9 +267,11 @@
 +    onTriggered: if (root.lockRequested && root.faceState === "scanning") root.showFaceSuccess()
 +  }
 +
++  // Long enough that the tick, which now arrives after the sphere's spin,
++  // is read on the desktop rather than glimpsed.
 +  Timer {
 +    id: afterglowHoldTimer
-+    interval: 900
++    interval: 1200
 +    repeat: false
 +    onTriggered: root.endAfterglow()
 +  }
@@ -293,7 +295,7 @@
    PamContext {
      id: fingerprintPam
      config: "omarchy-lock-fingerprint"
-@@ -547,5 +762,17 @@
+@@ -547,5 +764,17 @@
        root.previewVisible = false
        return "ok"
      }

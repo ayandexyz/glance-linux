@@ -8,3 +8,8 @@ OpenCV and NumPy, and the deviations are documented at each site.
 
 The ArcFace recognition model is from InsightFace
 (https://github.com/deepinsight/insightface).
+
+The lock screen's success animation (patches/omarchy-lock-faceid/
+unlock-spin.png) is frames 16-45 of the unlock video shipped with Glance
+(Resources/unlockanimation.mp4), cut to the inside of its ring and reduced
+to an alpha mask so it can take the current theme's colour.

@@ -12,6 +12,7 @@ for f in LockView.qml Service.qml; do
   [[ -f $lock/$f.orig ]] || cp -p "$lock/$f" "$lock/$f.orig"
 done
 install -m 644 "$here/FaceUnlockIndicator.qml" "$lock/FaceUnlockIndicator.qml"
+install -m 644 "$here/unlock-spin.png" "$lock/unlock-spin.png"
 install -m 644 "$here/LockView.qml" "$lock/LockView.qml"
 install -m 644 "$here/Service.qml" "$lock/Service.qml"
 echo "patched $lock (backups: *.orig). Now, as your user: omarchy-restart-shell"
