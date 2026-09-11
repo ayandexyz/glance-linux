@@ -1,6 +1,6 @@
---- /usr/share/omarchy/shell/plugins/lock/Service.qml	2026-09-09 00:00:57.000000000 +0530
-+++ Service.qml	2026-09-10 01:33:20.371099759 +0530
-@@ -33,6 +33,14 @@
+--- /usr/share/omarchy/shell/plugins/lock/Service.qml
++++ Service.qml
+@@ -33,6 +33,25 @@
    property string lastEventAt: ""
    property bool strandedLock: false
    property bool strandedLockResolved: false
@@ -11,35 +11,109 @@
 +  // module. hidden | scanning | success | failure.
 +  property string faceState: "hidden"
 +  property string faceMessage: ""
++  property bool faceAfterglow: false
++  property string faceAfterglowPhase: "hidden"
 +  readonly property string faceMessagePrefix: "Glance:"
++  // A scan can finish in a few hundred milliseconds, before the pill has even
++  // arrived. Shown as it happens, that is a flash: no mark, no ring, a tick
++  // that is gone before it is read. A success is held back until this much
++  // time has passed since the scan began — enough for the slide, the growth,
++  // the mark's beat and a moment of the ring. It costs a fast scan under a
++  // second and costs a slow one nothing. Set to 0 to unlock the instant PAM
++  // answers.
++  readonly property int faceMinScanMs: 1400
++  property double faceScanStartedAt: 0
  
    readonly property bool locked: lockRequested || sessionLock.locked || sessionLock.secure
    readonly property bool authenticating: authenticatingPassword || fingerprintAuthenticating
-@@ -113,12 +121,53 @@
+@@ -113,12 +132,117 @@
      console.log("omarchy lock " + lastEventAt + " " + event)
    }
  
 +  function beginFaceScan() {
 +    faceState = "scanning"
 +    faceMessage = ""
++    faceScanStartedAt = Date.now()
 +    faceHideTimer.stop()
 +    faceUnlockTimer.stop()
++    faceSuccessTimer.stop()
 +  }
 +
 +  // The scan did not unlock: PAM moved on to the password prompt, or the
 +  // whole conversation failed. Show the miss briefly, then get out of the way.
 +  function faceScanMissed() {
++    dropAfterglow()
 +    if (faceState !== "scanning") return
 +    faceState = "failure"
 +    faceHideTimer.restart()
 +  }
 +
++  // PAM has said yes. Let the pill finish arriving before it is told.
++  function faceScanSucceeded() {
++    var wait = faceMinScanMs - (Date.now() - faceScanStartedAt)
++    if (wait > 0) {
++      faceSuccessTimer.interval = wait
++      faceSuccessTimer.restart()
++      return
++    }
++    showFaceSuccess()
++  }
++
 +  // Hold the success frame for a beat before the lock drops, or the check
 +  // mark is never seen.
-+  function faceScanSucceeded() {
++  function showFaceSuccess() {
 +    faceState = "success"
 +    faceHideTimer.stop()
++    beginAfterglow()
 +    faceUnlockTimer.restart()
++  }
++
++  // --- the unlock afterglow -------------------------------------------
++  //
++  // The lock surface is destroyed the instant the session unlocks, taking the
++  // indicator with it — so the check mark would disappear at exactly the
++  // moment it is doing its job, and the unlock would end on a blink. This
++  // layer-shell window carries the same capsule, at the same place, across
++  // that boundary: raised just before the lock drops, and left on the desktop
++  // for a beat afterwards.
++  //
++  // It takes no keyboard focus and passes every click straight through, so it
++  // cannot get between the user and the session it has just handed back.
++  // Raised at the verdict, not at the unlock. A layer-shell window is not on
++  // screen when it is asked for — it has to be created, configured and
++  // painted, measured here at 60-230ms — while the lock surface is destroyed
++  // in the same turn as the request. Raising it at the unlock therefore leaves
++  // a stretch with neither on screen, which reads as the capsule vanishing and
++  // popping back.
++  //
++  // A session lock surface renders above every layer-shell layer, so a window
++  // raised now stays invisible until the lock drops and reveals it, already
++  // painted and in place. Should a compositor ever show it early, what appears
++  // is the same capsule at the same position, so there is still nothing to
++  // see.
++  function beginAfterglow() {
++    faceAfterglow = true
++    faceAfterglowPhase = "success"
++  }
++
++  // The beat on the desktop is measured from when the lock actually goes, not
++  // from when the window was raised.
++  function holdAfterglow() {
++    afterglowHoldTimer.restart()
++  }
++
++  function endAfterglow() {
++    afterglowHoldTimer.stop()
++    faceAfterglowPhase = "hidden"   // slides up and fades
++    afterglowExitTimer.restart()
++  }
++
++  // Nothing half-faded may survive into a new lock.
++  function dropAfterglow() {
++    afterglowHoldTimer.stop()
++    afterglowExitTimer.stop()
++    faceAfterglowPhase = "hidden"
++    faceAfterglow = false
 +  }
 +
 +  function clearFace() {
@@ -47,6 +121,7 @@
 +    faceMessage = ""
 +    faceHideTimer.stop()
 +    faceUnlockTimer.stop()
++    faceSuccessTimer.stop()
 +  }
 +
 +  function handlePamMessage() {
@@ -69,7 +144,15 @@
      fingerprintAuthenticating = false
      fingerprintRetryTimer.stop()
      if (passwordPam.active) passwordPam.abort()
-@@ -277,6 +326,8 @@
+@@ -132,6 +256,7 @@
+     }
+ 
+     resetAuthenticationState()
++    dropAfterglow()
+     lockRequested = true
+     armBlankTimer()
+     logEvent("lock-requested")
+@@ -277,6 +402,8 @@
          inputEnabled: root.lockRequested
          loadBackground: root.locked
          passwordText: root.enteredPassword
@@ -78,7 +161,37 @@
          onPasswordTextEdited: function(password) { root.enteredPassword = password }
          onSubmitPassword: function(password) { root.submitPassword(password) }
          onClearFailureRequested: root.failureMessage = ""
-@@ -307,6 +358,8 @@
+@@ -287,6 +414,29 @@
+   }
+ 
+   PanelWindow {
++    id: afterglowWindow
++    visible: root.faceAfterglow
++    anchors { top: true; bottom: true; left: true; right: true }
++    color: "transparent"
++    WlrLayershell.namespace: "omarchy-lock-afterglow"
++    WlrLayershell.layer: WlrLayer.Overlay
++    WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
++    exclusionMode: ExclusionMode.Ignore
++    // Empty input region: the pointer never meets this window at all.
++    mask: Region {}
++
++    FaceUnlockIndicator {
++      phase: root.faceAfterglowPhase
++      message: root.faceMessage
++      // The same offset LockView gives it, so the capsule does not move by a
++      // pixel as it changes surfaces.
++      topMargin: Math.round(parent.height * 0.07)
++      animateEntry: false
++      overDesktop: true
++    }
++  }
++
++  PanelWindow {
+     id: previewWindow
+     visible: root.previewVisible
+     anchors { top: true; bottom: true; left: true; right: true }
+@@ -307,6 +457,8 @@
        inputEnabled: false
        loadBackground: root.previewVisible
        passwordText: ""
@@ -87,7 +200,7 @@
      }
  
      MouseArea {
-@@ -321,23 +374,56 @@
+@@ -321,23 +473,86 @@
      config: "omarchy-lock-password"
      user: root.userName
  
@@ -130,19 +243,49 @@
      }
    }
  
++  // Long enough to read the check mark, short enough that the session does
++  // not feel withheld: the afterglow carries the rest of the confirmation on
++  // the far side of the unlock, where it costs the user nothing.
 +  Timer {
 +    id: faceUnlockTimer
-+    interval: 800
++    interval: 550
 +    repeat: false
 +    onTriggered: {
 +      root.authenticatingPassword = false
-+      if (root.lockRequested) root.finishUnlock()
++      if (!root.lockRequested) {
++        root.dropAfterglow()
++        return
++      }
++      root.finishUnlock()
++      root.holdAfterglow()
 +    }
 +  }
 +
 +  Timer {
++    id: faceSuccessTimer
++    repeat: false
++    onTriggered: if (root.lockRequested && root.faceState === "scanning") root.showFaceSuccess()
++  }
++
++  Timer {
++    id: afterglowHoldTimer
++    interval: 900
++    repeat: false
++    onTriggered: root.endAfterglow()
++  }
++
++  Timer {
++    id: afterglowExitTimer
++    interval: 420  // covers the indicator's own exit transition
++    repeat: false
++    onTriggered: root.faceAfterglow = false
++  }
++
++  // Long enough that the miss registers, short enough that the pill is not
++  // still sulking over a password field that has already taken focus.
++  Timer {
 +    id: faceHideTimer
-+    interval: 1800
++    interval: 1200
 +    repeat: false
 +    onTriggered: if (root.faceState === "failure") root.faceState = "hidden"
 +  }
@@ -150,7 +293,7 @@
    PamContext {
      id: fingerprintPam
      config: "omarchy-lock-fingerprint"
-@@ -547,5 +633,17 @@
+@@ -547,5 +762,17 @@
        root.previewVisible = false
        return "ok"
      }

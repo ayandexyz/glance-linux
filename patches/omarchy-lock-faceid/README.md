@@ -22,8 +22,8 @@ message; the patch watches for that prefix:
 | PAM event | indicator |
 |---|---|
 | info message starting `Glance:` | `scanning` — pill drops in, opens on the mark, then the ring and the camera |
-| conversation completes with success while scanning | `success` — ring closes, tick pops, unlock 550 ms later |
-| PAM moves on to the password prompt | `failure` — red ring, shake, hides after 1.8 s; password checked as usual |
+| conversation completes with success while scanning | `success` — ring closes, tick pops, unlock 550 ms later. A success that arrives under 1.4 s into the scan waits for the pill to finish arriving first, so a fast scan is not a flash |
+| PAM moves on to the password prompt | `failure` — red ring, shake, hides after 1.2 s; password checked as usual |
 
 No polling, no socket, and any module that announces itself the same way
 (howdy could) gets the indicator for free.
@@ -49,6 +49,11 @@ bar, the open panel, the camera view and the progress outline share one corner
 treatment, stepped down by each inset so the radii stay concentric. The shape
 never changes as the pill grows — only its size does.
 
+The verdict is the one exception. As the sweep closes, the pill and the
+outline round together into a full circle around the tick or the cross: the
+square was the frame for a face, the circle is a badge. The mark and the
+camera view, which only ever show while it is looking, stay square.
+
 ## The Omarchy mark
 
 The square logo mark, taken from `icon.png`, which Omarchy already ships at
@@ -61,10 +66,11 @@ follows a theme change with no per-theme asset. The brand page's pre-coloured
 variants (`omarchy-logo-rose-pine.svg` and friends) are pinned to one palette
 and would not do that.
 
-It holds the pill for 700 ms at the start of a scan — long enough to register,
-short enough that it is never standing between the user and their session —
-and the camera polling runs underneath it, so a frame is ready the instant the
-ring appears.
+It holds the pill for 750 ms, counted from the moment the pill starts to open
+rather than from the start of the scan — long enough to register once it has
+actually arrived, short enough that it is never standing between the user and
+their session — and the camera polling runs underneath it, so a frame is ready
+the instant the ring appears.
 
 ## The live view
 

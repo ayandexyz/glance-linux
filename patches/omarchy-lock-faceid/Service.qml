@@ -43,6 +43,15 @@ Item {
   property bool faceAfterglow: false
   property string faceAfterglowPhase: "hidden"
   readonly property string faceMessagePrefix: "Glance:"
+  // A scan can finish in a few hundred milliseconds, before the pill has even
+  // arrived. Shown as it happens, that is a flash: no mark, no ring, a tick
+  // that is gone before it is read. A success is held back until this much
+  // time has passed since the scan began — enough for the slide, the growth,
+  // the mark's beat and a moment of the ring. It costs a fast scan under a
+  // second and costs a slow one nothing. Set to 0 to unlock the instant PAM
+  // answers.
+  readonly property int faceMinScanMs: 1400
+  property double faceScanStartedAt: 0
 
   readonly property bool locked: lockRequested || sessionLock.locked || sessionLock.secure
   readonly property bool authenticating: authenticatingPassword || fingerprintAuthenticating
@@ -126,8 +135,10 @@ Item {
   function beginFaceScan() {
     faceState = "scanning"
     faceMessage = ""
+    faceScanStartedAt = Date.now()
     faceHideTimer.stop()
     faceUnlockTimer.stop()
+    faceSuccessTimer.stop()
   }
 
   // The scan did not unlock: PAM moved on to the password prompt, or the
@@ -139,9 +150,20 @@ Item {
     faceHideTimer.restart()
   }
 
+  // PAM has said yes. Let the pill finish arriving before it is told.
+  function faceScanSucceeded() {
+    var wait = faceMinScanMs - (Date.now() - faceScanStartedAt)
+    if (wait > 0) {
+      faceSuccessTimer.interval = wait
+      faceSuccessTimer.restart()
+      return
+    }
+    showFaceSuccess()
+  }
+
   // Hold the success frame for a beat before the lock drops, or the check
   // mark is never seen.
-  function faceScanSucceeded() {
+  function showFaceSuccess() {
     faceState = "success"
     faceHideTimer.stop()
     beginAfterglow()
@@ -201,6 +223,7 @@ Item {
     faceMessage = ""
     faceHideTimer.stop()
     faceUnlockTimer.stop()
+    faceSuccessTimer.stop()
   }
 
   function handlePamMessage() {
@@ -502,6 +525,12 @@ Item {
   }
 
   Timer {
+    id: faceSuccessTimer
+    repeat: false
+    onTriggered: if (root.lockRequested && root.faceState === "scanning") root.showFaceSuccess()
+  }
+
+  Timer {
     id: afterglowHoldTimer
     interval: 900
     repeat: false
@@ -515,9 +544,11 @@ Item {
     onTriggered: root.faceAfterglow = false
   }
 
+  // Long enough that the miss registers, short enough that the pill is not
+  // still sulking over a password field that has already taken focus.
   Timer {
     id: faceHideTimer
-    interval: 1800
+    interval: 1200
     repeat: false
     onTriggered: if (root.faceState === "failure") root.faceState = "hidden"
   }

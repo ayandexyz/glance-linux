@@ -82,8 +82,19 @@ Item {
   readonly property real cornerRadius: Math.min(22, Math.min(width, height) * 0.32)
   //: The inner radii are the outer one stepped down by each inset, so the
   //: outline and the camera view stay concentric with the pill's own corners.
+  //: That holds while the pill is looking. The verdict is the one exception:
+  //: the tick and the cross sit in a circle, and both the pill and the outline
+  //: round into one as the sweep closes — the square was the frame for a
+  //: face, the circle is a badge.
   readonly property real ringCornerRadius: 11.5
   readonly property real previewCornerRadius: 10
+  readonly property bool verdict: litPhase !== "scanning"
+  //: 0 is the square, 1 is the circle. One factor rather than an animated
+  //: radius, so the rounding stays put while the pill is changing size
+  //: underneath it — on the way out it contracts to a capsule, not to a bar
+  //: whose corners are still catching up.
+  property real verdictRound: verdict ? 1 : 0
+  Behavior on verdictRound { NumberAnimation { duration: 380; easing.type: Easing.OutCubic } }
 
   //: The mark is square (icon.png is 300 x 300), so one number sizes it. It
   //: fills the open square the way the camera view does, leaving the corners
@@ -104,7 +115,10 @@ Item {
 
   //: The mark holds the pill for a beat at the start of a scan, then gives way
   //: to the ring. Long enough to register, short enough that it is never
-  //: standing between the user and their session.
+  //: standing between the user and their session. The beat is measured from
+  //: the moment the pill starts to open, not from the start of the scan: the
+  //: slide-in and the growth come first, and a hold counted from the scan
+  //: would spend most of itself on a mark that is still arriving.
   property bool markStage: false
   readonly property bool showRing: shown && !markStage
   readonly property bool showPreview: scanning && hasPreview && !markStage
@@ -123,6 +137,7 @@ Item {
   function runChoreography() {
     if (!animateEntry) {
       positioned = shown
+      growEasing = shown ? Easing.OutBack : Easing.OutCubic
       expanded = shown
       return
     }
@@ -131,21 +146,26 @@ Item {
       expandDelay.restart()      // trailing: then grow
       slideDelay.stop()
     } else {
+      growEasing = Easing.OutCubic
       expanded = false           // leading: contract
       slideDelay.restart()       // trailing: then leave
       expandDelay.stop()
     }
   }
 
-  Timer { id: expandDelay; interval: 160; onTriggered: root.expanded = true }
+  Timer { id: expandDelay; interval: 160; onTriggered: { root.growEasing = Easing.OutBack; root.expanded = true } }
   Timer { id: slideDelay; interval: 180; onTriggered: root.positioned = false }
-  Timer { id: markTimer; interval: 700; onTriggered: root.markStage = false }
+  Timer { id: markTimer; interval: 750; onTriggered: root.markStage = false }
 
   onShownChanged: runChoreography()
+  onExpandedChanged: if (expanded && markStage) markTimer.restart()
   onPhaseChanged: {
     if (phase === "scanning") {
       markStage = true
-      markTimer.restart()
+      // Already open (a retry while the last verdict is still up): count from
+      // now. Otherwise the expansion starts the clock.
+      if (expanded) markTimer.restart()
+      else markTimer.stop()
     } else {
       markStage = false
       markTimer.stop()
@@ -174,14 +194,19 @@ Item {
   z: 10
 
   // Opening overshoots a little, closing does not — the asymmetry is what
-  // makes arriving feel eager and leaving feel deliberate.
+  // makes arriving feel eager and leaving feel deliberate. The curve is set
+  // imperatively just before `expanded` flips, rather than bound to it: a
+  // binding on the same flag is not guaranteed to have re-evaluated by the
+  // time the Behavior starts, and a collapse that begins on the opening curve
+  // dips below the closed size before it settles.
+  property int growEasing: Easing.OutBack
   Behavior on width {
     enabled: root.ready
-    NumberAnimation { duration: 450; easing.type: root.expanded ? Easing.OutBack : Easing.OutCubic; easing.overshoot: 1.4 }
+    NumberAnimation { duration: 450; easing.type: root.growEasing; easing.overshoot: 1.4 }
   }
   Behavior on height {
     enabled: root.ready
-    NumberAnimation { duration: 450; easing.type: root.expanded ? Easing.OutBack : Easing.OutCubic; easing.overshoot: 1.4 }
+    NumberAnimation { duration: 450; easing.type: root.growEasing; easing.overshoot: 1.4 }
   }
   Behavior on y {
     enabled: root.ready
@@ -200,7 +225,7 @@ Item {
     x: shakeOffset
     property real shakeOffset: 0
 
-    radius: root.cornerRadius
+    radius: root.cornerRadius + (Math.min(width, height) / 2 - root.cornerRadius) * root.verdictRound
     color: root.surfaceColor
     border.width: 1
     border.color: root.surfaceBorder
@@ -282,8 +307,9 @@ Item {
         visible: opacity > 0
         opacity: root.showPreview ? 1 : 0
         // Scale only: dimming a live face each cycle reads as flicker, not as
-        // breathing.
-        scale: root.showPreview ? root.pulseScale : 1
+        // breathing. Follows the pulse unconditionally: it settles back to 1
+        // on its own when the scan ends, so the view never snaps mid-fade.
+        scale: root.pulseScale
         Behavior on opacity { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
 
         layer.enabled: true
@@ -363,9 +389,17 @@ Item {
         property real angle: 0
         property real sweep: root.scanning ? 110 : 360
         Behavior on sweep { NumberAnimation { duration: 380; easing.type: Easing.OutCubic } }
+        //: Half the traced size is a full circle. Follows the pill's own
+        //: rounding, so the outline and the container round off together as
+        //: the sweep completes. The factor reads `litPhase` rather than
+        //: `phase`, so the badge keeps its circle while the pill leaves and
+        //: only squares up again once the next scan begins — behind the mark,
+        //: where nobody sees it.
+        property real cornerRadius: root.ringCornerRadius + ((width - 5) / 2 - root.ringCornerRadius) * root.verdictRound
 
         onAngleChanged: requestPaint()
         onSweepChanged: requestPaint()
+        onCornerRadiusChanged: requestPaint()
 
         NumberAnimation on angle {
           from: 0; to: 360
@@ -381,8 +415,11 @@ Item {
           var segs = []
           function line(x1, y1, x2, y2) {
             var dx = x2 - x1, dy = y2 - y1
-            segs.push({ curved: false, x1: x1, y1: y1, x2: x2, y2: y2,
-                        len: Math.sqrt(dx * dx + dy * dy) })
+            var len = Math.sqrt(dx * dx + dy * dy)
+            // At a full circle the straights vanish; a zero-length piece
+            // would only give the tracer something to spin on.
+            if (len < 0.01) return
+            segs.push({ curved: false, x1: x1, y1: y1, x2: x2, y2: y2, len: len })
           }
           function corner(cx, cy, a0) {
             segs.push({ curved: true, cx: cx, cy: cy, r: r,
@@ -446,7 +483,8 @@ Item {
           var ctx = getContext("2d")
           ctx.reset()
           var pad = 2.5
-          var segs = outline(pad, pad, width - pad * 2, height - pad * 2, root.ringCornerRadius)
+          var side = Math.min(width, height) - pad * 2
+          var segs = outline(pad, pad, width - pad * 2, height - pad * 2, Math.min(cornerRadius, side / 2))
           var total = 0
           for (var i = 0; i < segs.length; i++) total += segs[i].len
 
@@ -475,8 +513,8 @@ Item {
         // Stands in for the live view until a frame lands, and takes the
         // circle back for the verdict. Drawn after the view, so it has to
         // reach zero rather than merely dim.
-        opacity: root.showGlyph ? (root.scanning ? root.pulseOpacity : 1) : 0
-        scale: root.popScale * (root.scanning && root.showGlyph ? root.pulseScale : 1)
+        opacity: root.showGlyph ? root.pulseOpacity : 0
+        scale: root.popScale * root.pulseScale
         Behavior on color { ColorAnimation { duration: 200 } }
         Behavior on opacity { NumberAnimation { duration: 200 } }
       }
@@ -501,10 +539,19 @@ Item {
   }
   readonly property string previewUrl: previewDir === "" ? "" : "file://" + previewDir + "/preview.jpg"
 
+  // When the scan ends the pulse is wherever it was in its cycle; it eases
+  // home from there rather than jumping, so the hand-off to the verdict is
+  // a fade and not a fade with a twitch in it.
+  ParallelAnimation {
+    id: pulseSettle
+    NumberAnimation { target: root; property: "pulseScale"; to: 1; duration: 200; easing.type: Easing.OutCubic }
+    NumberAnimation { target: root; property: "pulseOpacity"; to: 1; duration: 200; easing.type: Easing.OutCubic }
+  }
+
   SequentialAnimation {
     running: root.scanning
     loops: Animation.Infinite
-    onRunningChanged: if (!running) { root.pulseScale = 1; root.pulseOpacity = 1 }
+    onRunningChanged: if (running) pulseSettle.stop(); else pulseSettle.restart()
     ParallelAnimation {
       NumberAnimation { target: root; property: "pulseScale"; to: 0.95; duration: 420; easing.type: Easing.InOutSine }
       NumberAnimation { target: root; property: "pulseOpacity"; to: 0.55; duration: 420; easing.type: Easing.InOutSine }

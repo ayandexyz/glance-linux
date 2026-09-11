@@ -1,5 +1,5 @@
---- /usr/share/omarchy/shell/plugins/lock/LockView.qml	2026-09-09 00:00:57.000000000 +0530
-+++ LockView.qml	2026-09-10 01:32:43.479004376 +0530
+--- /usr/share/omarchy/shell/plugins/lock/LockView.qml
++++ LockView.qml
 @@ -16,6 +16,11 @@
    property bool loadBackground: true
    property string passwordText: ""
