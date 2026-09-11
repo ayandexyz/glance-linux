@@ -43,12 +43,31 @@ OUTCOME_TEXT = {
 # --- helpers ----------------------------------------------------------------
 
 
-def _read_passphrase(args: argparse.Namespace, *, confirm: bool = False) -> str:
+def _prompts_in_a_window(args: argparse.Namespace) -> bool:
+    """A `--gui` enrollment started from a button has no terminal to type in.
+
+    getpass would fall back to reading stdin, find it closed, and die with
+    EOFError before the window ever opened — so the prompt moves into a window
+    too. A `--gui` run from a terminal keeps the terminal prompt.
+    """
+    return bool(getattr(args, "gui", False)) and not sys.stdin.isatty()
+
+
+def _read_passphrase(args: argparse.Namespace, *, confirm: bool = False, error: str = "") -> str:
     if getattr(args, "passphrase_stdin", False):
         line = sys.stdin.readline()
         if not line:
             raise SystemExit("no passphrase on stdin")
         return line.rstrip("\n")
+    if _prompts_in_a_window(args):
+        from .gui import ask_passphrase
+
+        chosen = ask_passphrase(confirm=confirm, error=error)
+        if chosen is None:
+            raise SystemExit("cancelled")
+        return chosen
+    if error:
+        print(error, file=sys.stderr)
     first = getpass.getpass("Passphrase: ")
     if not first:
         raise SystemExit("empty passphrase")
@@ -123,14 +142,22 @@ def _enroll(args: argparse.Namespace) -> int:
 
     store_path = paths.STORE_PATH
     fresh = not store_path.exists()
-    if fresh:
+    if fresh and not _prompts_in_a_window(args):
         print("No enrollment yet. Choose a passphrase; it encrypts your face data at rest.")
-    passphrase = _read_passphrase(args, confirm=fresh)
-    try:
-        store = store_module.load(passphrase, store_path)
-    except Exception:
-        print("wrong passphrase", file=sys.stderr)
-        return 1
+    # A window can say "wrong passphrase" and ask again; a terminal prompt is
+    # one shot, the way it always was.
+    attempts = 3 if _prompts_in_a_window(args) else 1
+    error = ""
+    for attempt in range(attempts):
+        passphrase = _read_passphrase(args, confirm=fresh, error=error)
+        try:
+            store = store_module.load(passphrase, store_path)
+            break
+        except Exception:
+            error = "wrong passphrase"
+            if attempt == attempts - 1:
+                print(error, file=sys.stderr)
+                return 1
 
     # The window's worker thread builds its own processor, so building one
     # here too would load MediaPipe and ArcFace twice and hold /dev/video0
