@@ -15,6 +15,11 @@ from pathlib import Path
 
 _REPO_MODELS = Path(__file__).resolve().parents[2] / "models"
 
+#: Where a distribution package drops the models. Read-only and owned by the
+#: package manager, so it is searched last: a user who runs `fetch-model`
+#: anyway gets their own copy honoured over the system one.
+SYSTEM_MODEL_DIR = Path(os.environ.get("GLANCE_SYSTEM_MODEL_DIR") or "/usr/share/glanced/models")
+
 DATA_DIR = Path(os.environ.get("GLANCE_DATA_DIR") or Path(
     os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share")
 ) / "glance")
@@ -34,8 +39,12 @@ ARCFACE_NAME = "arcface.onnx"
 
 
 def find_model(name: str) -> Path:
-    """First existing copy of `name`, else where it would be fetched to."""
-    for candidate in (MODEL_DIR / name, _REPO_MODELS / name):
+    """First existing copy of `name`, else where it would be fetched to.
+
+    The order is the order of intent: a model the user fetched themselves, then
+    a source checkout's own, then whatever the system package installed.
+    """
+    for candidate in (MODEL_DIR / name, _REPO_MODELS / name, SYSTEM_MODEL_DIR / name):
         if candidate.exists():
             return candidate
     return MODEL_DIR / name
