@@ -52,13 +52,13 @@ that `sufficient` ignores, and falls through to the password.
 
 1. Tag the daemon repo and push the tag:
 
-       git tag -a v0.1.0 -m "glanced 0.1.0"
-       git push origin v0.1.0
+       git tag -a v0.1.1 -m "glanced 0.1.1"
+       git push origin v0.1.1
 
 2. Fill in the tarball checksum — it is `SKIP` in the committed PKGBUILD
    because the tag does not exist until step 1:
 
-       curl -sL https://github.com/ayan-de/glance-linux/archive/refs/tags/v0.1.0.tar.gz \
+       curl -sL https://github.com/ayan-de/glance-linux/archive/refs/tags/v0.1.1.tar.gz \
          | sha256sum
 
    Replace the first entry of `sha256sums` with that value.
@@ -73,11 +73,11 @@ that `sufficient` ignores, and falls through to the password.
 
 4. Lint, then publish:
 
-       namcap PKGBUILD glanced-0.1.0-1-x86_64.pkg.tar.zst
+       namcap PKGBUILD glanced-0.1.1-1-x86_64.pkg.tar.zst
        makepkg --printsrcinfo > .SRCINFO
        git clone ssh://aur@aur.archlinux.org/glanced.git aur && cd aur
        cp ../PKGBUILD ../glanced.install ../.SRCINFO .
-       git add -A && git commit -m "glanced 0.1.0" && git push
+       git add -A && git commit -m "glanced 0.1.1" && git push
 
 `.SRCINFO` must be regenerated and committed on every version bump; the AUR
 rejects a push whose `.SRCINFO` disagrees with its `PKGBUILD`.

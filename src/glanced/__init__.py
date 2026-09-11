@@ -5,4 +5,4 @@ A Linux reimplementation of the liveness model from Glance
 than macOS's keystroke injection.
 """
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
