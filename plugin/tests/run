@@ -63,6 +63,7 @@ make_wrapper fake-online online
 make_wrapper fake-offline offline
 make_wrapper fake-garbage garbage
 make_wrapper fake-crash crash
+make_wrapper fake-fresh fresh
 
 export GLANCE_TEST_RESULT="$test_root/result.json"
 export GLANCE_PANEL_URL="file://$run_root/Panel.qml"
@@ -71,6 +72,8 @@ export GLANCE_FAKE_ONLINE="$test_root/fake-online"
 export GLANCE_FAKE_OFFLINE="$test_root/fake-offline"
 export GLANCE_FAKE_GARBAGE="$test_root/fake-garbage"
 export GLANCE_FAKE_CRASH="$test_root/fake-crash"
+export GLANCE_FAKE_FRESH="$test_root/fake-fresh"
+export GLANCE_FAKE_MARKER="$test_root/enroll-argv"
 
 log="$test_root/quickshell.log"
 if ! timeout 90 quickshell --path "$run_root/shell.qml" >"$log" 2>&1; then
@@ -88,6 +91,21 @@ if not report["ok"]:
     sys.exit(1)
 print("QML integration: all assertions passed")
 PY
+
+# The harness clicked Enroll for real. What the fake recorded is the argv that
+# survived GlanceLogic's wrapping, Quickshell's Process, and setsid --fork.
+if [[ ! -f $GLANCE_FAKE_MARKER ]]; then
+  echo "  FAIL: Enroll launched nothing; no argv recorded" >&2; exit 1
+fi
+expected="enroll --name $(id -un) --gui --remember"
+actual=$(<"$GLANCE_FAKE_MARKER")
+if [[ $actual != "$expected" ]]; then
+  echo "  FAIL: Enroll ran the wrong command" >&2
+  echo "    expected: $expected" >&2
+  echo "    actual:   $actual" >&2
+  exit 1
+fi
+echo "Enroll launch: reached glancectl as '$actual'"
 
 echo
 echo "all tests passed"

@@ -16,6 +16,7 @@ ShellRoot {
   readonly property string fakeOffline: Quickshell.env("GLANCE_FAKE_OFFLINE")
   readonly property string fakeGarbage: Quickshell.env("GLANCE_FAKE_GARBAGE")
   readonly property string fakeCrash: Quickshell.env("GLANCE_FAKE_CRASH")
+  readonly property string fakeFresh: Quickshell.env("GLANCE_FAKE_FRESH")
 
   property var failures: []
   property var widget: null
@@ -24,6 +25,7 @@ ShellRoot {
   property var garbage: null
   property var crash: null
   property var missing: null
+  property var fresh: null
   property int phase: 0
   property int waits: 0
 
@@ -82,6 +84,7 @@ ShellRoot {
     garbage = backendWith(fakeGarbage, "garbage backend")
     crash = backendWith(fakeCrash, "crash backend")
     missing = backendWith("/nonexistent/glancectl", "missing backend")
+    fresh = backendWith(fakeFresh, "fresh backend")
     poll.start()
   }
 
@@ -98,7 +101,7 @@ ShellRoot {
       }
 
       if (root.phase === 0) {
-        if (!(settled(root.online) && settled(root.offline) && settled(root.garbage) && settled(root.crash) && settled(root.missing))) return
+        if (!(settled(root.online) && settled(root.offline) && settled(root.garbage) && settled(root.crash) && settled(root.missing) && settled(root.fresh))) return
 
         assertTrue(root.widget !== null, "panel instantiated")
         if (root.widget) {
@@ -117,6 +120,26 @@ ShellRoot {
         assertTrue(root.garbage.fetchError.indexOf("unreadable") >= 0, "garbage: flagged as unreadable, got: " + root.garbage.fetchError)
         assertTrue(root.crash.fetchError.indexOf("status 3") >= 0, "crash: exit status surfaced, got: " + root.crash.fetchError)
         assertEqual(root.missing.binaryMissing, true, "missing: binary flagged")
+
+        // A fully wired daemon has nothing left to ask of the user.
+        assertEqual(root.online.nextAction, null, "online: no setup step outstanding")
+
+        // An offline daemon is systemd's problem, not glancectl's — even
+        // though glancectl is what the backend resolved.
+        assertTrue(root.offline.nextAction !== null, "offline: a setup step is offered")
+        if (root.offline.nextAction) {
+          assertEqual(root.offline.nextAction.key, "start", "offline: step is to start the daemon")
+          assertEqual(root.offline.nextAction.command[0], "systemctl", "offline: started by systemd")
+        }
+
+        // A fresh install: reachable, models present, nobody enrolled. The
+        // step must point at the glancectl the backend actually found, not the
+        // bare name, or a venv checkout would launch the wrong thing.
+        assertTrue(root.fresh.nextAction !== null, "fresh: a setup step is offered")
+        if (root.fresh.nextAction) {
+          assertEqual(root.fresh.nextAction.key, "enroll", "fresh: step is to enroll")
+          assertEqual(root.fresh.nextAction.command[0], root.fakeFresh, "fresh: uses the resolved binary")
+        }
 
         // Phase 1: the arm action, passphrase over stdin.
         root.online.arm("wrong", false)
@@ -148,6 +171,21 @@ ShellRoot {
         if (root.online.actionBusy || root.online.actionResult === null || root.online.actionResult.name !== "authenticate") return
         assertEqual(root.online.actionResult.outcome, "unlocked", "scan: outcome parsed")
         assertEqual(root.online.actionResult.identity, "tester", "scan: identity parsed")
+
+        // Phase 4: press Enroll for real. The fake records its argv, which
+        // tests/run then checks — so the whole path is exercised, wrapper
+        // included, rather than asserted about.
+        root.fresh.runNextAction()
+        root.phase = 4
+        root.waits = 0
+        return
+      }
+
+      if (root.phase === 4) {
+        if (root.fresh.launchCount === 0) return
+        // Enrolling is a minute of sweeping: it must not block the panel.
+        assertEqual(root.fresh.actionBusy, false, "enroll: launch does not block the panel")
+        assertEqual(root.fresh.launchError, "", "enroll: launched cleanly")
         root.finish()
       }
     }

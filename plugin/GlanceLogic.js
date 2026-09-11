@@ -80,15 +80,82 @@ function stateLabel(status) {
   return "Armed · " + (status.mode === "heavy" ? "heavy liveness" : "light liveness")
 }
 
+// The one thing standing between the user and a working unlock, as something
+// the panel can run rather than a line to copy — or null when nothing is
+// needed. `glancectl` is the binary the backend actually resolved, so the
+// button and the command shown under it can never disagree.
+//
+//   command   argv, or null when the panel handles it inline
+//   terminal  needs a terminal window: interactive (sudo) or slow enough to
+//             deserve the progress it prints
+//   detached  outlives the call; the panel must not wait on it
+//
+// `arm` alone has no command. The passphrase belongs in the panel's own field,
+// where it goes to stdin — never into an argv any other process can read.
+function nextAction(status, glancectl, user) {
+  var ctl = String(glancectl || "glancectl")
+  function action(key, explain, label, icon, command, terminal, detached) {
+    return {
+      key: key,
+      explain: explain,
+      label: label,
+      icon: icon,
+      command: command,
+      hint: command ? command.join(" ") : ctl + " " + key,
+      terminal: terminal === true,
+      detached: detached === true
+    }
+  }
+  if (!status) return null
+  if (!status.reachable) {
+    return action("start", "glanced is not running.", "Start daemon", "\udb80\udd0a",
+                  ["systemctl", "--user", "enable", "--now", "glanced"], false, false)
+  }
+  var missing = missingModels(status)
+  if (missing.length > 0) {
+    return action("fetch-model", "Models not downloaded: " + missing.join(", ") + ".",
+                  "Download models", "\udb80\udcac", [ctl, "fetch-model"], true, true)
+  }
+  if (!status.enrolled) {
+    return action("enroll", "No face enrolled yet.", "Enroll", "\udb84\udc7b",
+                  [ctl, "enroll", "--name", String(user || "$USER"), "--gui", "--remember"],
+                  false, true)
+  }
+  if (!status.armed) {
+    return action("arm", "Enrollment is encrypted; the daemon needs the passphrase to scan.",
+                  "Arm", "\udb81\udc83", null, false, false)
+  }
+  if (status.pam && status.pam.wired !== true) {
+    return action("setup-pam", "The lock screen is not wired to the daemon yet. "
+                  + "This opens a terminal and asks for your password:",
+                  "Wire lock screen", "\udb80\udd83", [ctl, "setup-pam"], true, true)
+  }
+  return null
+}
+
+// How an action's argv has to be wrapped to actually run it. Three shapes,
+// because three kinds of command: one that needs a terminal to ask for a
+// password or show a progress bar, one that opens its own window and must
+// survive a shell reload mid-sweep, and one that just runs.
+function launchCommand(action) {
+  if (!action || !action.command) return null
+  if (action.terminal) {
+    // Omarchy's launcher already setsids into the user's chosen terminal.
+    return ["omarchy-launch-terminal"].concat(action.command)
+  }
+  if (action.detached) {
+    // A new session leader outlives this plugin: reloading the shell must not
+    // kill an enrollment half way through the sweep.
+    return ["setsid", "--fork"].concat(action.command)
+  }
+  return action.command.slice()
+}
+
 // The single command that unblocks the user, or "" when nothing is needed.
+// Derived from nextAction so the text under the button is the command it runs.
 function nextStep(status) {
-  if (!status) return ""
-  if (!status.reachable) return "systemctl --user start glanced"
-  if (missingModels(status).length > 0) return "glancectl fetch-model"
-  if (!status.enrolled) return "glancectl enroll --name \"$USER\" --remember"
-  if (!status.armed) return "glancectl arm"
-  if (status.pam && status.pam.wired !== true) return "glancectl setup-pam"
-  return ""
+  var action = nextAction(status, "glancectl", "$USER")
+  return action ? action.hint : ""
 }
 
 // How the lock screen reaches the daemon, if at all. Null pam block: an older

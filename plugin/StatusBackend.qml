@@ -31,6 +31,13 @@ Item {
   property string actionName: ""
   property var actionResult: null
 
+  // Launches: the setup steps, which open a window or a terminal and outlive
+  // the call. They deliberately do not take actionBusy — enrolling a face is a
+  // minute of sweeping, and the panel stays usable throughout.
+  property string launchError: ""
+  // Bumped every time a launch settles, so a test can tell one actually ran.
+  property int launchCount: 0
+
   readonly property int refreshIntervalSec: Math.round(GlanceLogic.clamp(
     setting("refreshIntervalSec", 30), 5, 600))
   // Configured path wins. Otherwise PATH, and if that fails once, the place
@@ -41,6 +48,11 @@ Item {
   property bool useFallback: false
   readonly property string binaryPath: configuredPath !== "" ? configuredPath
     : (useFallback ? fallbackPath : "glancectl")
+
+  readonly property string userName: Quickshell.env("USER") || "$USER"
+  // The one setup step still outstanding, bound to the glancectl we resolved
+  // so the button and the command printed under it cannot disagree.
+  readonly property var nextAction: GlanceLogic.nextAction(status, binaryPath, userName)
 
   readonly property bool reachable: status ? status.reachable : false
   readonly property bool armed: status ? status.armed : false
@@ -104,6 +116,28 @@ Item {
     if (remember) args.push("--remember")
     // The passphrase goes over stdin, never argv, so it is not in `ps`.
     runAction("arm", args, passphrase + "\n")
+  }
+
+  // Run the outstanding setup step, wrapped as its shape demands.
+  function runNextAction() {
+    var command = GlanceLogic.launchCommand(nextAction)
+    if (!command || launchProcess.running) return
+    launchError = ""
+    launchProcess.command = command
+    launchProcess.running = true
+  }
+
+  function settleLaunch() {
+    launchCount += 1
+    if (launchProcess.exitSeen && launchProcess.lastExit !== 0) {
+      launchError = String(launchProcess.errBody).trim()
+        || "exited with status " + launchProcess.lastExit
+    }
+    // Whatever was launched changes the daemon's state on its own schedule, so
+    // poll briefly rather than trusting one refresh to catch it.
+    followUp.count = 0
+    followUp.restart()
+    refresh()
   }
 
   function runAction(name, command, stdinText) {
@@ -243,6 +277,50 @@ Item {
     onTriggered: {
       actionProcess.timedOut = true
       actionProcess.running = false
+    }
+  }
+
+  Process {
+    id: launchProcess
+    running: false
+
+    property string errBody: ""
+    property bool exitSeen: false
+    property int lastExit: 0
+
+    stdout: SplitParser { splitMarker: "" }
+    stderr: SplitParser {
+      splitMarker: ""
+      onRead: function(data) { launchProcess.errBody += String(data) }
+    }
+
+    onExited: function(exitCode) {
+      launchProcess.exitSeen = true
+      launchProcess.lastExit = exitCode
+    }
+
+    onRunningChanged: {
+      if (running) {
+        errBody = ""
+        exitSeen = false
+        lastExit = 0
+      } else {
+        root.settleLaunch()
+      }
+    }
+  }
+
+  // A minute of quick polling after a launch, so the panel notices the daemon
+  // starting or the sweep finishing without waiting out the idle interval.
+  Timer {
+    id: followUp
+    property int count: 0
+    interval: 3000
+    repeat: true
+    onTriggered: {
+      count += 1
+      if (count >= 20) stop()
+      root.refresh()
     }
   }
 

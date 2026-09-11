@@ -9,7 +9,16 @@ case $mode in
   garbage) echo "<html>"; exit 0 ;;
 esac
 case $cmd in
+  enroll)
+    # Records the argv it was handed, so the harness can prove the Enroll
+    # button reached the right binary through the setsid wrapper.
+    [[ -n ${GLANCE_FAKE_MARKER:-} ]] && printf '%s\n' "$*" >"$GLANCE_FAKE_MARKER"
+    ;;
   status)
+    if [[ $mode == fresh ]]; then
+      echo '{"schemaVersion": 1, "reachable": true, "armed": false, "mode": "light", "scanning": false, "enrolled": false, "remembered": false, "camera": "/dev/video0", "models": {"landmarker": true, "arcface": true}, "pam": {"module": false, "wired": false}, "identities": [], "lastScan": null}'
+      exit 0
+    fi
     if [[ $mode == offline ]]; then
       echo '{"schemaVersion": 1, "reachable": false, "error": "daemon not reachable", "armed": false, "scanning": false, "enrolled": true, "models": {"landmarker": true, "arcface": true}, "identities": [], "lastScan": null}'
       exit 1

@@ -25,7 +25,9 @@ Ui.Panel {
 
   readonly property var status: backend.status
   readonly property string stateLabel: GlanceLogic.stateLabel(status)
-  readonly property string nextStep: GlanceLogic.nextStep(status)
+  // The outstanding setup step, resolved by the backend against the glancectl
+  // it found, or null when unlock is fully wired.
+  readonly property var nextAction: backend.nextAction
   readonly property bool canArm: status && status.reachable && status.enrolled && !status.armed
     && GlanceLogic.missingModels(status).length === 0
   readonly property bool canScan: status && status.reachable && status.armed && !backend.actionBusy
@@ -141,35 +143,53 @@ Ui.Panel {
           }
         }
 
-        // What to do next, when the daemon cannot scan yet.
+        // What to do next, when the daemon cannot scan yet: one button for the
+        // one step, and the command it runs printed underneath. Nothing here
+        // does anything you could not type at a prompt yourself — which is why
+        // the command is shown rather than hidden behind the label.
         Column {
           width: parent.width
           spacing: Style.spacing.xs
-          visible: root.nextStep !== "" && !backend.binaryMissing && backend.fetchError === ""
+          visible: root.nextAction !== null && !backend.binaryMissing && backend.fetchError === ""
 
           Text {
             width: parent.width
-            text: {
-              if (!root.status) return ""
-              if (!root.status.reachable) return "glanced is not running."
-              var missing = GlanceLogic.missingModels(root.status)
-              if (missing.length > 0) return "Models not downloaded: " + missing.join(", ") + "."
-              if (!root.status.enrolled) return "No face enrolled yet."
-              if (!root.status.armed) return "Enrollment is encrypted; the daemon needs the passphrase to scan."
-              return "The lock screen is not wired to the daemon yet. Run this in a terminal (it uses sudo):"
-            }
+            text: root.nextAction ? root.nextAction.explain : ""
             color: root.foreground
             wrapMode: Text.WordWrap
             font.family: root.fontFamily
             font.pixelSize: Style.font.bodySmall
           }
 
+          // Arming is the one step with no button: its passphrase belongs in
+          // the field below, where it reaches glancectl over stdin.
+          Ui.Button {
+            visible: root.nextAction !== null && root.nextAction.command !== null
+            text: root.nextAction ? root.nextAction.label : ""
+            iconText: root.nextAction ? root.nextAction.icon : ""
+            bordered: true
+            foreground: root.foreground
+            fontFamily: root.fontFamily
+            enabled: !backend.actionBusy
+            onClicked: backend.runNextAction()
+          }
+
           Text {
             width: parent.width
             visible: !root.canArm
-            text: root.nextStep
+            text: root.nextAction ? root.nextAction.hint : ""
             color: root.dim
             wrapMode: Text.WrapAnywhere
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.caption
+          }
+
+          Text {
+            width: parent.width
+            visible: backend.launchError !== ""
+            text: backend.launchError
+            color: root.urgent
+            wrapMode: Text.WordWrap
             font.family: root.fontFamily
             font.pixelSize: Style.font.caption
           }
