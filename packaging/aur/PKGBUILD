@@ -39,7 +39,7 @@ source=(
   "buffalo_s.zip::https://github.com/deepinsight/insightface/releases/download/v0.7/buffalo_s.zip"
 )
 sha256sums=(
-  'SKIP'  # replace with the tarball's checksum once v0.1.0 is tagged
+  '0c08a73b297eb29fee902fafbc9a316974db03ab6ec7d55741389beae720d3d2'
   '64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff'
   'd85a87f503f691807cd8bb97128bdf7a0660326cd9cd02657127fa978bab8b5e'
 )
