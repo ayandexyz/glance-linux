@@ -27,7 +27,7 @@ care goes. Four rules hold for every child process:
 
 - **Absolute paths only.** `/usr/bin/glancectl`, `/usr/bin/systemctl`,
   `/usr/bin/setsid`, `/usr/bin/omarchy-launch-terminal`, `/usr/bin/stat`,
-  `/usr/bin/timeout`. Nothing is resolved through `PATH`, so a shadowed
+  `/usr/bin/timeout`, `/usr/bin/python3`. Nothing is resolved through `PATH`, so a shadowed
   executable earlier on an inherited `PATH` cannot stand in for the real one.
 - **The glancectl it runs is checked before every run.** Whether the default
   or the path you set, each invocation is preceded by one `stat(1)` call over
@@ -37,17 +37,23 @@ care goes. Four rules hold for every child process:
   prints the component that failed. `stat` also reports the plugin's own uid
   from `/proc/self/status`, so the check trusts the kernel, not `$HOME` or
   `$USER`.
-- **The checked object is the object that runs.** A pathname is not an
-  identity, so the check keeps the file's device, inode, size and mtime and
-  compares them the next time. If a different file now answers to the same
-  name — a `glanced` upgrade, ordinarily — it is adopted as the current
-  glancectl, but the command that was waiting on the check is dropped rather
-  than run against a file that was never the one checked; the next check,
-  which matches, is what releases it. Between that check and the `exec` the
-  ownership rules are what hold: every component is writable only by root or
-  by the uid the plugin runs as, which is yours, and you can already run
-  anything as yourself — there is no other principal who can swap the object
-  in the gap, and no privilege boundary for you to cross by swapping it.
+- **The checked object is the object that runs — as a descriptor, not a
+  name.** A pathname is resolved afresh by every `exec`, so a check over a
+  pathname cannot say what the `exec` went on to open. Nothing here execs a
+  pathname. Every invocation runs `/usr/bin/python3` with a short program on
+  argv that opens the path **once** (`O_RDONLY | O_NOFOLLOW`), `fstat`s that
+  descriptor, refuses unless it is the object `stat(1)` accepted — device,
+  inode, size, mtime, owner and mode — and then `execve`s **the descriptor
+  itself**. Open, verify and exec all name one open file description, so
+  there is no second resolution for anything to be swapped into: a rename
+  that lands after the check makes the identity mismatch and nothing runs.
+  The interpreter is root-owned, absolute, and already a hard dependency of
+  `glanced`, which is a Python entry point; the program travels on argv
+  rather than as a file next to the plugin, because the plugin directory is
+  user-owned and such a file would itself be swappable. The check also keeps
+  that identity between runs, so a `glanced` upgrade is noticed: the new file
+  is adopted, and the command queued against the old one is dropped rather
+  than run.
 - **Children get a pinned environment, a byte ceiling and a deadline that
   covers the whole tree.** `PATH` is set to `/usr/bin:/usr/share/omarchy/bin`
   and `PYTHONPATH`, `PYTHONHOME`, `PYTHONSTARTUP`, `LD_PRELOAD`,
@@ -70,7 +76,9 @@ one, one under a world-writable directory, a relative path, a planted
 `PYTHONPATH` that must not reach the child, one that is renamed out from under
 the path it passed its last check on, and one that hangs with a descendant
 behind it — which records the signal it got, so the suite can tell a killed
-tree from a killed process.
+tree from a killed process. The race itself is run: the identity is taken, a
+same-uid rename puts a different executable behind the name, and the exec has
+to refuse it unrun — as it does for a symlink dropped in at the same moment.
 
 ## Requirements
 
@@ -140,7 +148,7 @@ the daemon alone: nothing about your enrollment, your PAM stack, or the
 | key | default | meaning |
 |---|---|---|
 | `refreshIntervalSec` | 30 | idle poll interval; the panel also refreshes on open and after every action |
-| `glancectlPath` | `""` (`/usr/bin/glancectl`) | absolute path to `glancectl`; checked as described above before every run |
+| `glancectlPath` | `""` (`/usr/bin/glancectl`) | absolute path to `glancectl`; checked as described above before every run, and executed as the checked object rather than by name |
 
 ## IPC
 

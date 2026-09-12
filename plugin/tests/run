@@ -14,6 +14,56 @@ echo "== GlanceLogic unit tests =="
 node "$plugin_root/tests/test_glance_logic.js"
 
 echo
+echo "== descriptor exec: winning the race must not get you executed =="
+# The verifier is read out of GlanceLogic.js, so this exercises the program the
+# plugin actually passes to python3, not a copy of it.
+verifier=$(node -e '
+const fs = require("fs"), vm = require("vm")
+const src = fs.readFileSync(process.argv[1], "utf8").replace(/^\.pragma library\s*$/m, "")
+process.stdout.write(vm.runInNewContext(src + "\n;({ EXEC_VERIFIER })").EXEC_VERIFIER)
+' "$plugin_root/GlanceLogic.js")
+
+probe="$test_root/probe"
+printf '#!/usr/bin/env bash\necho CHECKED-OBJECT "$@"\n' >"$probe"
+chmod 755 "$probe"
+# What a passing stat(1) check retains, in the order the verifier compares it.
+identity=$(stat -c '%d:%i:%s:%Y:%u:%a' "$probe")
+
+out=$(python3 -c "$verifier" "$identity" "$probe" hello 2>&1) || {
+  echo "  FAIL: the checked object would not run: $out" >&2; exit 1; }
+if [[ $out != "CHECKED-OBJECT hello" ]]; then
+  echo "  FAIL: wrong thing ran: $out" >&2; exit 1
+fi
+echo "the checked object runs, and is handed its arguments"
+
+# Now win the race: the identity was taken, and the object behind the pathname
+# is replaced before the exec. Same uid, same name, same mode — a plain rename
+# by a same-UID process, which is precisely the reported attack.
+attacker="$test_root/attacker"
+printf '#!/usr/bin/env bash\necho ATTACKER-RAN "$@"\n' >"$attacker"
+chmod 755 "$attacker"
+mv "$attacker" "$probe"
+
+if out=$(python3 -c "$verifier" "$identity" "$probe" hello 2>&1); then
+  echo "  FAIL: the replacement executed: $out" >&2; exit 1
+fi
+if grep -q ATTACKER-RAN <<<"$out"; then
+  echo "  FAIL: the replacement executed: $out" >&2; exit 1
+fi
+if ! grep -q "is not the object that was checked" <<<"$out"; then
+  echo "  FAIL: refused for the wrong reason: $out" >&2; exit 1
+fi
+echo "a file swapped in after the check is refused at exec, unrun"
+
+# A symlink dropped in at the last moment is refused before it is even fstat'd.
+rm -f "$probe"; ln -s /bin/sh "$probe"
+if out=$(python3 -c "$verifier" "$identity" "$probe" hello 2>&1); then
+  echo "  FAIL: a symlink swapped in executed: $out" >&2; exit 1
+fi
+echo "a symlink swapped in after the check is refused unopened"
+rm -f "$probe"
+
+echo
 echo "== manifest contract =="
 if command -v omarchy >/dev/null 2>&1; then
   omarchy plugin validate "$plugin_root"

@@ -9,7 +9,7 @@ const assert = require("assert")
 
 const source = fs.readFileSync(path.join(__dirname, "..", "GlanceLogic.js"), "utf8")
   .replace(/^\.pragma library\s*$/m, "")
-const G = vm.runInNewContext(source + "\n;({ parseStatus, stateLabel, nextStep, outcomeLabel, outcomeSeverity, missingModels, identityLine, elapsed, lastScanText, lastScanReason, parseActionResult, clamp, lockLabel, nextAction, launchCommand, pathSyntaxProblem, pathPrefixes, statCommand, checkBinary, appendCapped, childEnvironment, bounded, deadlineHit, sameIdentity, describeIdentity, SYSTEMCTL, SETSID, LAUNCH_TERMINAL, STAT, TIMEOUT, DEFAULT_GLANCECTL, SAFE_PATH, CHECK_DEADLINE_SEC, STATUS_DEADLINE_SEC, ACTION_DEADLINE_SEC, LAUNCH_DEADLINE_SEC, KILL_GRACE_SEC })")
+const G = vm.runInNewContext(source + "\n;({ parseStatus, stateLabel, nextStep, outcomeLabel, outcomeSeverity, missingModels, identityLine, elapsed, lastScanText, lastScanReason, parseActionResult, clamp, lockLabel, nextAction, launchCommand, pathSyntaxProblem, pathPrefixes, statCommand, checkBinary, appendCapped, childEnvironment, bounded, deadlineHit, sameIdentity, describeIdentity, verifiedCommand, identityToken, EXEC_VERIFIER, PYTHON3, SYSTEMCTL, SETSID, LAUNCH_TERMINAL, STAT, TIMEOUT, DEFAULT_GLANCECTL, SAFE_PATH, CHECK_DEADLINE_SEC, STATUS_DEADLINE_SEC, ACTION_DEADLINE_SEC, LAUNCH_DEADLINE_SEC, KILL_GRACE_SEC })")
 // Objects built inside the vm have a foreign Object prototype, which trips
 // deepStrictEqual; compare by value instead.
 function assertSame(actual, expected, message) {
@@ -18,6 +18,9 @@ function assertSame(actual, expected, message) {
 
 const tests = []
 function test(name, fn) { tests.push([name, fn]) }
+
+// A stand-in for what a passing stat(1) check retains.
+const ID = { dev: "2049", ino: "4242", size: "8192", mtime: "1700000000", uid: 0, mode: 0o755 }
 
 const online = {
   schemaVersion: 1, reachable: true, armed: true, mode: "light", scanning: false, enrolled: true,
@@ -93,24 +96,31 @@ test("next action ranks the setup steps and stays runnable", () => {
 })
 
 test("launch wrapping matches the shape of each step", () => {
-  assert.strictEqual(G.launchCommand(null), null)
-  assert.strictEqual(G.launchCommand(action({ armed: false })), null, "arm is inline, never spawned")
+  assert.strictEqual(G.launchCommand(null, ID), null)
+  assert.strictEqual(G.launchCommand(action({ armed: false }), ID), null, "arm is inline, never spawned")
 
-  // sudo needs somewhere to be typed.
-  assertSame(G.launchCommand(action({ pam: { module: true, wired: false } })),
-    ["/usr/bin/omarchy-launch-terminal", "glancectl", "setup-pam"])
+  // sudo needs somewhere to be typed, and what it types for is the checked
+  // object rather than the name: the terminal runs the verifier, not glancectl.
+  assertSame(G.launchCommand(action({ pam: { module: true, wired: false } }), ID),
+    ["/usr/bin/omarchy-launch-terminal"].concat(G.verifiedCommand(["glancectl", "setup-pam"], ID)))
 
   // The download prints progress; give it a terminal to print into.
-  assertSame(G.launchCommand(action({ models: {} })),
-    ["/usr/bin/omarchy-launch-terminal", "glancectl", "fetch-model"])
+  assertSame(G.launchCommand(action({ models: {} }), ID),
+    ["/usr/bin/omarchy-launch-terminal"].concat(G.verifiedCommand(["glancectl", "fetch-model"], ID)))
 
   // Detached, so reloading the shell mid-sweep does not kill the window.
-  assertSame(G.launchCommand(action({ enrolled: false }, "/opt/glancectl", "ayan")),
-    ["/usr/bin/setsid", "--fork", "/opt/glancectl", "enroll", "--name", "ayan", "--gui", "--remember"])
+  assertSame(G.launchCommand(action({ enrolled: false }, "/opt/glancectl", "ayan"), ID),
+    ["/usr/bin/setsid", "--fork"].concat(G.verifiedCommand(
+      ["/opt/glancectl", "enroll", "--name", "ayan", "--gui", "--remember"], ID)))
 
-  // Starting the daemon is quick and silent: no wrapper at all.
-  assertSame(G.launchCommand(action({ reachable: false })),
+  // Starting the daemon is quick and silent: no wrapper, and no verifier —
+  // systemctl is a fixed root-owned path, not the configurable one.
+  assertSame(G.launchCommand(action({ reachable: false }), ID),
     ["/usr/bin/systemctl", "--user", "enable", "--now", "glanced"])
+
+  // Without an identity nothing can be launched at all: there is no path
+  // back to running the bare pathname.
+  assert.strictEqual(G.launchCommand(action({ pam: { module: true, wired: false } }), null), null)
 })
 
 test("arming has no command because the passphrase must not reach argv", () => {
@@ -201,7 +211,7 @@ test("every fixed tool is an absolute path and nothing is left to PATH", () => {
   assert.strictEqual(G.nextAction(status({ enrolled: false }), "", "ayan").command[0], "/usr/bin/glancectl")
   // Every argv the plugin can produce starts with an absolute path.
   for (const overrides of [{ reachable: false }, { models: {} }, { enrolled: false }, { pam: { module: true, wired: false } }]) {
-    const argv = G.launchCommand(G.nextAction(status(overrides), "/usr/bin/glancectl", "ayan"))
+    const argv = G.launchCommand(G.nextAction(status(overrides), "/usr/bin/glancectl", "ayan"), ID)
     assert.ok(argv[0].startsWith("/"), JSON.stringify(argv) + " resolves through PATH")
   }
 })
@@ -357,6 +367,27 @@ test("the identity behind the path is retained, and a swap is caught before anyt
   assert.strictEqual(G.sameIdentity(first.identity, null), false)
   assert.strictEqual(G.sameIdentity(null, null), false)
   assert.ok(G.describeIdentity(first.identity).includes("4242"))
+})
+
+test("what runs is the checked object, not the pathname it had", () => {
+  const argv = G.verifiedCommand(["/usr/bin/glancectl", "status", "--json"], ID)
+  assert.strictEqual(argv[0], "/usr/bin/python3", "the interpreter is root-owned and absolute")
+  assert.strictEqual(argv[1], "-c")
+  assert.strictEqual(argv[2], G.EXEC_VERIFIER, "the program travels on argv, not as a file beside the plugin")
+  assert.strictEqual(argv[3], "2049:4242:8192:1700000000:0:755", "the identity to hold the descriptor to")
+  assertSame(argv.slice(4), ["/usr/bin/glancectl", "status", "--json"])
+
+  // The verifier must open once and exec that descriptor. A second pathname
+  // resolution anywhere in it would be the bug this exists to remove.
+  assert.ok(G.EXEC_VERIFIER.includes("os.execve(fd,"), "must exec the descriptor, not the path")
+  assert.ok(G.EXEC_VERIFIER.includes("os.fstat(fd)"), "must verify the descriptor, not the path")
+  assert.ok(G.EXEC_VERIFIER.includes("O_NOFOLLOW"), "must not follow a symlink swapped in at the last moment")
+  assert.ok(!/os\.stat\(|os\.execv\(|os\.execvp/.test(G.EXEC_VERIFIER), "no pathname-based stat or exec")
+
+  // No identity, no command: never a silent fall back to the bare path.
+  assert.strictEqual(G.verifiedCommand(["/usr/bin/glancectl"], null), null)
+  assert.strictEqual(G.verifiedCommand([], ID), null)
+  assert.strictEqual(G.identityToken(null), "")
 })
 
 let failed = 0

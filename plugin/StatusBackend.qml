@@ -19,10 +19,12 @@ import "GlanceLogic.js" as GlanceLogic
 //   - glancectl itself, default or configured, is checked with stat(1)
 //     immediately before *every* run, never once and then trusted: absolute,
 //     no symlinks, every component owned by root or you and writable by
-//     nobody else, the file regular and executable — and the same object,
-//     by device and inode and size and mtime, as the check that released the
-//     previous run. A replacement is adopted but nothing queued runs against
-//     it; see GlanceLogic.checkBinary;
+//     nobody else, the file regular and executable;
+//   - and it is then executed *as the object that check accepted*, never as
+//     the pathname it had. Every invocation goes through
+//     GlanceLogic.verifiedCommand, which opens the path once, fstats that
+//     descriptor and execs the descriptor itself, so there is no second
+//     pathname resolution for anything to be swapped into;
 //   - the child environment pins PATH and drops interpreter and loader
 //     overrides (GlanceLogic.childEnvironment);
 //   - every child is wrapped in timeout(1), which runs it in a process group
@@ -204,8 +206,9 @@ Item {
       pendingRefresh = true
       return
     }
-    statusProcess.command = GlanceLogic.bounded([binaryPath, "status", "--json"],
-                                                GlanceLogic.STATUS_DEADLINE_SEC)
+    var command = GlanceLogic.verifiedCommand([binaryPath, "status", "--json"], binaryIdentity)
+    if (!command) return
+    statusProcess.command = GlanceLogic.bounded(command, GlanceLogic.STATUS_DEADLINE_SEC)
     statusProcess.running = true
   }
 
@@ -254,8 +257,16 @@ Item {
     actionName = name
     actionResult = null
     withVerifiedBinary("action", function() {
+      var argv = GlanceLogic.verifiedCommand(command, root.binaryIdentity)
+      if (!argv) {
+        root.actionResult = { name: name, ok: false, outcome: "", identity: "", reason: "",
+                              error: "no checked glancectl to run" }
+        root.actionName = ""
+        root.actionBusy = false
+        return
+      }
       actionProcess.secret = stdinText
-      actionProcess.command = GlanceLogic.bounded(command, GlanceLogic.ACTION_DEADLINE_SEC)
+      actionProcess.command = GlanceLogic.bounded(argv, GlanceLogic.ACTION_DEADLINE_SEC)
       actionProcess.running = true
     }, function(reason) {
       root.actionResult = { name: name, ok: false, outcome: "", identity: "", reason: "", error: reason }
@@ -291,7 +302,7 @@ Item {
     if (!step || !step.command) return
     launchError = ""
     withVerifiedBinary("launch", function() {
-      var command = GlanceLogic.launchCommand(step)
+      var command = GlanceLogic.launchCommand(step, root.binaryIdentity)
       if (!command || launchProcess.running) return
       // The deadline is on the launcher, not on what it launches: both
       // wrappers hand their window to a session of their own, which is the

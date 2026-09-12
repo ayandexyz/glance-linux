@@ -14,6 +14,7 @@ var SETSID = "/usr/bin/setsid"
 var LAUNCH_TERMINAL = "/usr/bin/omarchy-launch-terminal"
 var STAT = "/usr/bin/stat"
 var TIMEOUT = "/usr/bin/timeout"
+var PYTHON3 = "/usr/bin/python3"
 
 // The PATH handed to children. glancectl's own subprocesses (sudo, make,
 // omarchy-apply-lock during setup-pam) resolve through this and nothing else.
@@ -62,6 +63,52 @@ function bounded(argv, seconds) {
 // the command finishing on its own terms.
 function deadlineHit(exitCode) {
   return Number(exitCode) === DEADLINE_EXIT || Number(exitCode) === DEADLINE_KILLED_EXIT
+}
+
+// --- executing the object that was checked, not the name it had -------------
+
+// A pathname is resolved afresh by every exec, so a check over a pathname
+// cannot say which object the exec went on to open. This runs instead of
+// glancectl, and closes that: it opens the path *once*, fstats that
+// descriptor, refuses unless the descriptor is the object the stat(1) check
+// accepted, and then execs the descriptor itself. There is no second
+// resolution to race — open, verify and exec all name the same open file
+// description — and if the path was replaced in the interval, the identity
+// will not match and nothing is executed.
+//
+// The interpreter is /usr/bin/python3: root-owned, absolute, and already a
+// hard dependency of glanced, which is a Python entry point. The program is
+// passed on argv rather than shipped as a file next to the plugin, because
+// the plugin directory is user-owned and a file there would be exactly the
+// kind of object this is meant to stop being swapped.
+var EXEC_VERIFIER = [
+  "import os,sys",
+  "want=sys.argv[1].split(':');path=sys.argv[2]",
+  "try:",
+  "    fd=os.open(path,os.O_RDONLY|os.O_NOFOLLOW)",
+  "except OSError as e:",
+  "    sys.exit('glance: cannot open %s: %s' % (path,e))",
+  "st=os.fstat(fd)",
+  "got=[str(st.st_dev),str(st.st_ino),str(st.st_size),str(int(st.st_mtime)),str(st.st_uid),format(st.st_mode & 0o7777,'o')]",
+  "if got!=want:",
+  "    sys.exit('glance: %s is not the object that was checked (%s, wanted %s)' % (path,':'.join(got),':'.join(want)))",
+  "os.set_inheritable(fd,True)",
+  "os.execve(fd,[path]+sys.argv[3:],os.environ)"
+].join("\n")
+
+// The identity, in the order the verifier compares it.
+function identityToken(identity) {
+  if (!identity) return ""
+  return [identity.dev, identity.ino, identity.size, identity.mtime,
+          String(identity.uid), identity.mode.toString(8)].join(":")
+}
+
+// argv for running `argv` (argv[0] being the checked glancectl) as the object
+// `identity` describes. Null when there is no identity to hold it to, so a
+// caller can never fall back to running the bare pathname.
+function verifiedCommand(argv, identity) {
+  if (!argv || argv.length === 0 || !identity) return null
+  return [PYTHON3, "-c", EXEC_VERIFIER, identityToken(identity)].concat(argv)
 }
 
 function clamp(value, low, high) {
@@ -197,18 +244,29 @@ function nextAction(status, glancectl, user) {
 // because three kinds of command: one that needs a terminal to ask for a
 // password or show a progress bar, one that opens its own window and must
 // survive a shell reload mid-sweep, and one that just runs.
-function launchCommand(action) {
+// `identity` is the glancectl the check accepted. The step's own command is
+// rewritten to go through the verifier above, so the setup steps — setup-pam,
+// the one that leads to an interactive sudo, included — exec the checked
+// object rather than re-resolving its name inside a terminal. A step that
+// does not run glancectl at all (starting the daemon is systemd's business)
+// is left as it is.
+function launchCommand(action, identity) {
   if (!action || !action.command) return null
+  var command = action.command
+  if (command[0] !== SYSTEMCTL) {
+    command = verifiedCommand(command, identity)
+    if (!command) return null
+  }
   if (action.terminal) {
     // Omarchy's launcher already setsids into the user's chosen terminal.
-    return [LAUNCH_TERMINAL].concat(action.command)
+    return [LAUNCH_TERMINAL].concat(command)
   }
   if (action.detached) {
     // A new session leader outlives this plugin: reloading the shell must not
     // kill an enrollment half way through the sweep.
-    return [SETSID, "--fork"].concat(action.command)
+    return [SETSID, "--fork"].concat(command)
   }
-  return action.command.slice()
+  return command.slice()
 }
 
 // The single command that unblocks the user, or "" when nothing is needed.
