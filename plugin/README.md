@@ -23,31 +23,54 @@ not running PAM talks to the daemon exactly the same.
 ## What it runs, and how
 
 A shell plugin runs unsandboxed as you, so the process boundary is where the
-care goes. Three rules hold for every child process:
+care goes. Four rules hold for every child process:
 
 - **Absolute paths only.** `/usr/bin/glancectl`, `/usr/bin/systemctl`,
-  `/usr/bin/setsid`, `/usr/bin/omarchy-launch-terminal`, `/usr/bin/stat`.
-  Nothing is resolved through `PATH`, so a shadowed executable earlier on an
-  inherited `PATH` cannot stand in for the real one.
-- **The glancectl it runs is checked first.** Whether the default or the
-  path you set, it goes through one `stat(1)` call over every component
-  before its first use, and is refused unless it is absolute, contains no
+  `/usr/bin/setsid`, `/usr/bin/omarchy-launch-terminal`, `/usr/bin/stat`,
+  `/usr/bin/timeout`. Nothing is resolved through `PATH`, so a shadowed
+  executable earlier on an inherited `PATH` cannot stand in for the real one.
+- **The glancectl it runs is checked before every run.** Whether the default
+  or the path you set, each invocation is preceded by one `stat(1)` call over
+  every component, and is refused unless the path is absolute, contains no
   symlinks, every directory and the file are owned by root or by you and
   writable by nobody else, and the file is regular and executable. The panel
   prints the component that failed. `stat` also reports the plugin's own uid
   from `/proc/self/status`, so the check trusts the kernel, not `$HOME` or
   `$USER`.
-- **Children get a pinned environment and a byte ceiling.** `PATH` is set to
-  `/usr/bin:/usr/share/omarchy/bin` and `PYTHONPATH`, `PYTHONHOME`,
-  `PYTHONSTARTUP`, `LD_PRELOAD`, `LD_LIBRARY_PATH` and `LD_AUDIT` are
-  unset, because `glancectl` is a Python entry point and `setup-pam` runs
-  `sudo`. stdout is capped at 64 KiB and stderr at 16 KiB per process; a
-  child that writes more is killed at once and what it wrote is discarded
-  rather than parsed or rendered.
+- **The checked object is the object that runs.** A pathname is not an
+  identity, so the check keeps the file's device, inode, size and mtime and
+  compares them the next time. If a different file now answers to the same
+  name — a `glanced` upgrade, ordinarily — it is adopted as the current
+  glancectl, but the command that was waiting on the check is dropped rather
+  than run against a file that was never the one checked; the next check,
+  which matches, is what releases it. Between that check and the `exec` the
+  ownership rules are what hold: every component is writable only by root or
+  by the uid the plugin runs as, which is yours, and you can already run
+  anything as yourself — there is no other principal who can swap the object
+  in the gap, and no privilege boundary for you to cross by swapping it.
+- **Children get a pinned environment, a byte ceiling and a deadline that
+  covers the whole tree.** `PATH` is set to `/usr/bin:/usr/share/omarchy/bin`
+  and `PYTHONPATH`, `PYTHONHOME`, `PYTHONSTARTUP`, `LD_PRELOAD`,
+  `LD_LIBRARY_PATH` and `LD_AUDIT` are unset, because `glancectl` is a Python
+  entry point and `setup-pam` runs `sudo`. stdout is capped at 64 KiB and
+  stderr at 16 KiB per process; a child that writes more is stopped at once
+  and what it wrote is discarded rather than parsed or rendered. Every child
+  is spawned under `timeout(1)`, which puts it in a process group of its own
+  and signals *the group* — SIGTERM, then SIGKILL five seconds later — so the
+  deadline (5 s for the check, 10 s for a status poll, 45 s for an action,
+  30 s for a launcher) and the output caps reach `glancectl`'s own `sudo`,
+  `make` and `omarchy-apply-lock` descendants too, and not just the one pid
+  the plugin spawned. The exception is deliberate and visible: the enrollment
+  window and the `setup-pam` terminal are handed to a session of their own by
+  `setsid`, because a sweep must survive a shell reload; nothing in them is
+  read back, and the panel does not wait on them.
 
 All of this is exercised in `tests/run` against a fake glancectl: a flooding
-one, one under a world-writable directory, a relative path, and a planted
-`PYTHONPATH` that must not reach the child.
+one, one under a world-writable directory, a relative path, a planted
+`PYTHONPATH` that must not reach the child, one that is renamed out from under
+the path it passed its last check on, and one that hangs with a descendant
+behind it — which records the signal it got, so the suite can tell a killed
+tree from a killed process.
 
 ## Requirements
 
@@ -117,7 +140,7 @@ the daemon alone: nothing about your enrollment, your PAM stack, or the
 | key | default | meaning |
 |---|---|---|
 | `refreshIntervalSec` | 30 | idle poll interval; the panel also refreshes on open and after every action |
-| `glancectlPath` | `""` (`/usr/bin/glancectl`) | absolute path to `glancectl`; checked as described above before it is run |
+| `glancectlPath` | `""` (`/usr/bin/glancectl`) | absolute path to `glancectl`; checked as described above before every run |
 
 ## IPC
 
@@ -136,8 +159,9 @@ tests/run
 Runs the `GlanceLogic.js` unit tests under node, `omarchy plugin validate`,
 qmllint, and a headless Quickshell harness that instantiates the real panel and
 backend against `tests/fake-glancectl` — so the process bridge, the stdin
-passphrase hand-off, the status contract, the binary check, the output caps
-and the child environment are exercised for real.
+passphrase hand-off, the status contract, the binary check and its identity
+retention, the output caps, the process-group deadlines and the child
+environment are exercised for real.
 
 ## License
 

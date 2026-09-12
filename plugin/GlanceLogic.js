@@ -13,6 +13,7 @@ var SYSTEMCTL = "/usr/bin/systemctl"
 var SETSID = "/usr/bin/setsid"
 var LAUNCH_TERMINAL = "/usr/bin/omarchy-launch-terminal"
 var STAT = "/usr/bin/stat"
+var TIMEOUT = "/usr/bin/timeout"
 
 // The PATH handed to children. glancectl's own subprocesses (sudo, make,
 // omarchy-apply-lock during setup-pam) resolve through this and nothing else.
@@ -23,6 +24,45 @@ var SAFE_PATH = "/usr/bin:/usr/share/omarchy/bin"
 // timers bound how long a process may run, these bound how much it may say.
 var STDOUT_CAP = 64 * 1024
 var STDERR_CAP = 16 * 1024
+
+// Wall-clock ceilings, in seconds. A scan can legitimately take the daemon's
+// full scan timeout plus model warm-up on the first run, hence the wide one
+// for actions; a launcher only has to hand its window off to a new session.
+var CHECK_DEADLINE_SEC = 5
+var STATUS_DEADLINE_SEC = 10
+var ACTION_DEADLINE_SEC = 45
+var LAUNCH_DEADLINE_SEC = 30
+// How long the tree gets to die of SIGTERM before it is SIGKILLed.
+var KILL_GRACE_SEC = 5
+
+// timeout(1) exit codes: the deadline was hit, and the deadline was hit and
+// SIGKILL was needed. Either way nothing the child wrote may be trusted.
+var DEADLINE_EXIT = 124
+var DEADLINE_KILLED_EXIT = 128 + 9
+
+// Every child runs under timeout(1), which is what makes a deadline mean the
+// whole process tree rather than just the process we spawned: without
+// --foreground it puts the command in a new process group of its own and
+// signals *the group*, so a glancectl that shelled out to sudo, make or
+// omarchy-apply-lock cannot outlive the boundary by being a grandchild. It
+// also forwards a SIGTERM of its own to that group, which is how the output
+// caps below stop a tree rather than a process, and it waits for the child,
+// so timeout(1) exiting means the child was reaped. --kill-after turns
+// SIGTERM into SIGKILL for anything in the group still standing.
+//
+// A Quickshell Timer cannot do any of this: it can only flip `running`, which
+// reaches one pid.
+function bounded(argv, seconds) {
+  if (!argv || argv.length === 0) return null
+  return [TIMEOUT, "--kill-after=" + KILL_GRACE_SEC, "--signal=TERM",
+          String(seconds)].concat(argv)
+}
+
+// True when an exit code means timeout(1) enforced the deadline rather than
+// the command finishing on its own terms.
+function deadlineHit(exitCode) {
+  return Number(exitCode) === DEADLINE_EXIT || Number(exitCode) === DEADLINE_KILLED_EXIT
+}
 
 function clamp(value, low, high) {
   var n = Number(value)
@@ -303,16 +343,49 @@ function pathPrefixes(path) {
 // stat, so the uid comes from the kernel rather than from an inherited
 // environment variable. No -L: a symlink anywhere shows up as one and is
 // refused, so the checked path is the executed path.
+//
+// Device and inode, size and mtime come back alongside the ownership bits
+// because a pathname is not an identity: they are what `sameIdentity` below
+// compares, so a path that is re-checked before every run is also known to
+// still be the same object it was the last time it ran.
 function statCommand(path) {
   var prefixes = pathPrefixes(path)
   if (!prefixes) return null
-  return [STAT, "-c", "%u %a %F %n", "/proc/self/status"].concat(prefixes)
+  return [STAT, "-c", "%u %a %d %i %s %Y %F %n", "/proc/self/status"].concat(prefixes)
 }
 
+// %F is the only field that contains spaces ("regular empty file"), so it sits
+// last before the name. The numbers that make up an identity are kept as the
+// strings stat printed: an inode is 64-bit and a JS number is not.
 function parseStatLine(line) {
-  var match = /^(\d+) ([0-7]+) ([a-z ]+?) (\/.*)$/.exec(line)
+  var match = /^(\d+) ([0-7]+) (\d+) (\d+) (\d+) (\d+) ([a-z ]+?) (\/.*)$/.exec(line)
   if (!match) return null
-  return { uid: Number(match[1]), mode: parseInt(match[2], 8), type: match[3], name: match[4] }
+  return {
+    uid: Number(match[1]),
+    mode: parseInt(match[2], 8),
+    dev: match[3],
+    ino: match[4],
+    size: match[5],
+    mtime: match[6],
+    type: match[7],
+    name: match[8]
+  }
+}
+
+// What is retained between a check and the run it vouches for.
+function identityOf(info) {
+  return { dev: info.dev, ino: info.ino, size: info.size, mtime: info.mtime,
+           uid: info.uid, mode: info.mode }
+}
+
+function sameIdentity(a, b) {
+  if (!a || !b) return false
+  return a.dev === b.dev && a.ino === b.ino && a.size === b.size
+      && a.mtime === b.mtime && a.uid === b.uid && a.mode === b.mode
+}
+
+function describeIdentity(identity) {
+  return identity ? "device " + identity.dev + " inode " + identity.ino : "unknown"
 }
 
 // The verdict on `path` given stat's stdout. Every directory on the way must
@@ -320,31 +393,53 @@ function parseStatLine(line) {
 // file itself the same, regular, and executable. Anything else, including a
 // component that is a symlink, is a reason to refuse, and the reason names
 // the component so the user can see what to fix.
-function checkBinary(path, statOutput) {
+//
+// `previous` is the identity the last accepted check retained, or null on the
+// first one. Because this runs immediately before every execution, a `changed`
+// verdict means the object behind the pathname was replaced since the command
+// that last ran through it — a package upgrade, ordinarily. The identity is
+// adopted, but nothing already queued is run against it: the caller is told,
+// and the next check (which will match) is what releases the command. So no
+// invocation ever reaches a file that was not stat'd, as that file, moments
+// earlier.
+//
+// The ownership rules are what make "moments earlier" enough. Every component
+// is writable only by root or by the uid the plugin runs as, and that uid is
+// the user, who can already run whatever they like as themselves — so no other
+// principal can swap the object inside the window, and there is no privilege
+// boundary for the user to cross by swapping it themselves.
+function checkBinary(path, statOutput, previous) {
   var prefixes = pathPrefixes(path)
-  if (!prefixes) return { ok: false, reason: String(path) + ": " + pathSyntaxProblem(path) }
+  if (!prefixes) return { ok: false, reason: String(path) + ": " + pathSyntaxProblem(path), identity: null, changed: false }
   var lines = String(statOutput || "").split("\n").filter(function(l) { return l !== "" })
-  if (lines.length === 0) return { ok: false, reason: "could not inspect " + path }
+  if (lines.length === 0) return { ok: false, reason: "could not inspect " + path, identity: null, changed: false }
   var self = parseStatLine(lines[0])
-  if (!self || self.name !== "/proc/self/status") return { ok: false, reason: "could not determine own uid" }
+  if (!self || self.name !== "/proc/self/status") return { ok: false, reason: "could not determine own uid", identity: null, changed: false }
   var uid = self.uid
   var byName = {}
   for (var i = 1; i < lines.length; i++) {
     var entry = parseStatLine(lines[i])
     if (entry) byName[entry.name] = entry
   }
+  function refuse(reason) { return { ok: false, reason: reason, identity: null, changed: false } }
   for (var j = 0; j < prefixes.length; j++) {
     var name = prefixes[j]
     var info = byName[name]
     var last = j === prefixes.length - 1
-    if (!info) return { ok: false, reason: name + " does not exist" }
+    if (!info) return refuse(name + " does not exist")
     var want = last ? "regular file" : "directory"
-    if (info.type !== want) return { ok: false, reason: name + " is a " + info.type + ", not a " + want }
-    if (info.uid !== 0 && info.uid !== uid) return { ok: false, reason: name + " is owned by uid " + info.uid + ", not root or you" }
-    if ((info.mode & 0o022) !== 0) return { ok: false, reason: name + " is writable by group or others" }
-    if (last && (info.mode & 0o111) === 0) return { ok: false, reason: name + " is not executable" }
+    if (info.type !== want) return refuse(name + " is a " + info.type + ", not a " + want)
+    if (info.uid !== 0 && info.uid !== uid) return refuse(name + " is owned by uid " + info.uid + ", not root or you")
+    if ((info.mode & 0o022) !== 0) return refuse(name + " is writable by group or others")
+    if (last && (info.mode & 0o111) === 0) return refuse(name + " is not executable")
   }
-  return { ok: true, reason: "" }
+  var identity = identityOf(byName[prefixes[prefixes.length - 1]])
+  return {
+    ok: true,
+    reason: "",
+    identity: identity,
+    changed: previous ? !sameIdentity(previous, identity) : false
+  }
 }
 
 // Append `data` to `current` under `cap`. Once the cap is crossed the caller

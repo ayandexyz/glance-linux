@@ -19,6 +19,8 @@ ShellRoot {
   readonly property string fakeFresh: Quickshell.env("GLANCE_FAKE_FRESH")
   readonly property string fakeFlood: Quickshell.env("GLANCE_FAKE_FLOOD")
   readonly property string fakeOpen: Quickshell.env("GLANCE_FAKE_OPEN")
+  readonly property string fakeHang: Quickshell.env("GLANCE_FAKE_HANG")
+  readonly property string fakeSwap: Quickshell.env("GLANCE_FAKE_SWAP")
 
   property var failures: []
   property var widget: null
@@ -31,6 +33,7 @@ ShellRoot {
   property var flood: null
   property var open: null
   property var relative: null
+  property var hang: null
   property int phase: 0
   property int waits: 0
 
@@ -76,6 +79,20 @@ ShellRoot {
 
   Item { id: host }
 
+  // Renames a byte-identical copy over the fake glancectl: same name, same
+  // mode, same content, different inode. Nothing the backend can see through
+  // a pathname changes; only the object behind it does.
+  Process {
+    id: swap
+    running: false
+    command: [ "/usr/bin/mv", root.fakeSwap, root.fakeOnline ]
+    property bool done: false
+    onExited: function(exitCode) {
+      if (exitCode !== 0) root.fail("could not swap the fake glancectl: mv exited " + exitCode)
+      swap.done = true
+    }
+  }
+
   FileView {
     id: resultFile
     path: root.resultPath
@@ -93,6 +110,8 @@ ShellRoot {
     flood = backendWith(fakeFlood, "flood backend")
     open = backendWith(fakeOpen, "world-writable backend")
     relative = backendWith("tests/fake-glancectl", "relative backend")
+    // Its deadline runs alongside every other phase, and is collected last.
+    hang = backendWith(fakeHang, "hanging backend")
     poll.start()
   }
 
@@ -102,7 +121,7 @@ ShellRoot {
     repeat: true
     onTriggered: {
       root.waits++
-      if (root.waits > 200) {
+      if (root.waits > 400) {
         root.fail("timed out waiting for phase " + root.phase)
         root.finish()
         return
@@ -210,6 +229,56 @@ ShellRoot {
         // Enrolling is a minute of sweeping: it must not block the panel.
         assertEqual(root.fresh.actionBusy, false, "enroll: launch does not block the panel")
         assertEqual(root.fresh.launchError, "", "enroll: launched cleanly")
+
+        // Phase 5: swap the file behind the path that has been passing checks
+        // all along, then ask for an action. The check runs again before the
+        // command, so the swap has to be caught — a check kept from startup
+        // could not see it.
+        swap.running = true
+        root.phase = 5
+        root.waits = 0
+        return
+      }
+
+      if (root.phase === 5) {
+        if (!swap.done) return
+        root.online.testScan()
+        root.phase = 6
+        root.waits = 0
+        return
+      }
+
+      if (root.phase === 6) {
+        if (root.online.actionBusy || root.online.actionResult === null) return
+        assertEqual(root.online.actionResult.ok, false, "swap: the action was refused")
+        assertTrue(root.online.actionResult.error.indexOf("was replaced") >= 0,
+                   "swap: refused because the file changed, got: " + root.online.actionResult.error)
+        // The refusal must not wedge the panel, and the new file, having
+        // passed every rule, is what the next command checks against.
+        assertEqual(root.online.actionBusy, false, "swap: the panel is usable again")
+        root.online.testScan()
+        root.phase = 7
+        root.waits = 0
+        return
+      }
+
+      if (root.phase === 7) {
+        if (root.online.actionBusy || root.online.actionResult === null
+            || root.online.actionResult.error.indexOf("was replaced") >= 0) return
+        assertEqual(root.online.actionResult.outcome, "unlocked", "swap: the replacement runs once it is the checked file")
+        root.phase = 8
+        root.waits = 0
+        return
+      }
+
+      // Collected last: a glancectl that never returns and left a descendant
+      // behind. The deadline belongs to timeout(1), so it is the tree that
+      // goes; tests/run checks the grandchild's own account of it.
+      if (root.phase === 8) {
+        if (!settled(root.hang)) return
+        assertTrue(root.hang.status === null, "hang: nothing parsed")
+        assertTrue(root.hang.fetchError.indexOf("timed out") >= 0,
+                   "hang: deadline reported, got: " + root.hang.fetchError)
         root.finish()
       }
     }

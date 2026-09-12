@@ -9,7 +9,7 @@ const assert = require("assert")
 
 const source = fs.readFileSync(path.join(__dirname, "..", "GlanceLogic.js"), "utf8")
   .replace(/^\.pragma library\s*$/m, "")
-const G = vm.runInNewContext(source + "\n;({ parseStatus, stateLabel, nextStep, outcomeLabel, outcomeSeverity, missingModels, identityLine, elapsed, lastScanText, lastScanReason, parseActionResult, clamp, lockLabel, nextAction, launchCommand, pathSyntaxProblem, pathPrefixes, statCommand, checkBinary, appendCapped, childEnvironment, SYSTEMCTL, SETSID, LAUNCH_TERMINAL, STAT, DEFAULT_GLANCECTL, SAFE_PATH })")
+const G = vm.runInNewContext(source + "\n;({ parseStatus, stateLabel, nextStep, outcomeLabel, outcomeSeverity, missingModels, identityLine, elapsed, lastScanText, lastScanReason, parseActionResult, clamp, lockLabel, nextAction, launchCommand, pathSyntaxProblem, pathPrefixes, statCommand, checkBinary, appendCapped, childEnvironment, bounded, deadlineHit, sameIdentity, describeIdentity, SYSTEMCTL, SETSID, LAUNCH_TERMINAL, STAT, TIMEOUT, DEFAULT_GLANCECTL, SAFE_PATH, CHECK_DEADLINE_SEC, STATUS_DEADLINE_SEC, ACTION_DEADLINE_SEC, LAUNCH_DEADLINE_SEC, KILL_GRACE_SEC })")
 // Objects built inside the vm have a foreign Object prototype, which trips
 // deepStrictEqual; compare by value instead.
 function assertSame(actual, expected, message) {
@@ -225,14 +225,32 @@ test("the stat command reports every component and our own uid, without followin
   assert.strictEqual(argv[0], "/usr/bin/stat")
   assert.ok(!argv.includes("-L"), "must not dereference symlinks")
   assertSame(argv.slice(3), ["/proc/self/status", "/", "/home", "/home/ayan", "/home/ayan/.venv", "/home/ayan/.venv/bin", "/home/ayan/.venv/bin/glancectl"])
+  // Identity, not just permission: a pathname says nothing about which object
+  // answers to it, so device, inode, size and mtime come back too.
+  const format = argv[argv.indexOf("-c") + 1]
+  for (const field of ["%u", "%a", "%d", "%i", "%s", "%Y", "%F", "%n"]) {
+    assert.ok(format.includes(field), "stat format is missing " + field)
+  }
 })
 
-const statLines = lines => "1000 444 regular empty file /proc/self/status\n" + lines.join("\n") + "\n"
+// Test lines are written "uid mode type name" and expanded here, so a change
+// of identity is spelled out only where a test is about one.
+let nextInode = 100
+function statLine(line, identity) {
+  const match = /^(\d+) ([0-7]+) ([a-z ]+?) (\/.*)$/.exec(line)
+  const id = Object.assign({ dev: 2049, ino: nextInode++, size: 4096, mtime: 1700000000 }, identity || {})
+  return [match[1], match[2], id.dev, id.ino, id.size, id.mtime, match[3], match[4]].join(" ")
+}
+const statLines = (lines, identity) => statLine("1000 444 regular empty file /proc/self/status") + "\n"
+  + lines.map((line, index) => statLine(line, index === lines.length - 1 ? identity : null)).join("\n") + "\n"
 
 test("a binary is accepted only when every component is owned by root or us and writable by nobody else", () => {
   const ok = G.checkBinary("/usr/bin/glancectl", statLines([
     "0 755 directory /", "0 755 directory /usr", "0 755 directory /usr/bin", "0 755 regular file /usr/bin/glancectl"]))
-  assertSame(ok, { ok: true, reason: "" })
+  assert.strictEqual(ok.ok, true, ok.reason)
+  assert.strictEqual(ok.changed, false, "nothing to compare against on the first check")
+  assert.strictEqual(ok.identity.uid, 0)
+  assert.strictEqual(ok.identity.mode, 0o755)
 
   const venv = G.checkBinary("/home/ayan/venv/bin/glancectl", statLines([
     "0 755 directory /", "0 755 directory /home", "1000 700 directory /home/ayan",
@@ -284,6 +302,61 @@ test("the child environment pins PATH and drops interpreter and loader overrides
     assert.strictEqual(env[name], null, name + " must be unset")
   }
   assert.strictEqual(env.PYTHONNOUSERSITE, "1")
+})
+
+test("a bounded command hands the deadline to timeout(1), which owns the whole group", () => {
+  const argv = G.bounded(["/usr/bin/glancectl", "setup-pam"], G.ACTION_DEADLINE_SEC)
+  assert.strictEqual(argv[0], "/usr/bin/timeout")
+  // --foreground would leave the command in our own process group, and the
+  // signal would then reach one process instead of the tree.
+  assert.ok(!argv.includes("--foreground"), "the command must get a process group of its own")
+  assertSame(argv, ["/usr/bin/timeout", "--kill-after=" + G.KILL_GRACE_SEC, "--signal=TERM",
+                    String(G.ACTION_DEADLINE_SEC), "/usr/bin/glancectl", "setup-pam"])
+  assert.strictEqual(G.bounded([], 5), null)
+  assert.strictEqual(G.bounded(null, 5), null)
+
+  // Every deadline is a positive number of seconds, and the wide one is the
+  // action deadline: a first scan warms models up.
+  for (const seconds of [G.CHECK_DEADLINE_SEC, G.STATUS_DEADLINE_SEC, G.ACTION_DEADLINE_SEC, G.LAUNCH_DEADLINE_SEC, G.KILL_GRACE_SEC]) {
+    assert.ok(Number.isFinite(seconds) && seconds > 0, "deadline must be a positive number of seconds")
+  }
+  assert.ok(G.ACTION_DEADLINE_SEC > G.STATUS_DEADLINE_SEC)
+
+  // 124 is timeout(1) giving up; 137 is the group having needed SIGKILL.
+  assert.strictEqual(G.deadlineHit(124), true)
+  assert.strictEqual(G.deadlineHit(137), true)
+  assert.strictEqual(G.deadlineHit(0), false)
+  assert.strictEqual(G.deadlineHit(1), false)
+})
+
+test("the identity behind the path is retained, and a swap is caught before anything runs", () => {
+  const lines = ["0 755 directory /", "0 755 directory /usr", "0 755 directory /usr/bin", "0 755 regular file /usr/bin/glancectl"]
+  const first = G.checkBinary("/usr/bin/glancectl", statLines(lines, { ino: 4242, mtime: 1700000000, size: 8192 }))
+  assert.strictEqual(first.ok, true, first.reason)
+
+  // The same object again: the command it was checked for is released.
+  const again = G.checkBinary("/usr/bin/glancectl", statLines(lines, { ino: 4242, mtime: 1700000000, size: 8192 }), first.identity)
+  assert.strictEqual(again.changed, false, "same device, inode, size and mtime is the same file")
+
+  // A different file under the same name, still owned by root and still
+  // executable: accepted as the new glancectl, but flagged, so the caller
+  // drops what it had queued instead of running it against a file that was
+  // never the one checked.
+  for (const swap of [{ ino: 9999 }, { dev: 2050 }, { mtime: 1700000001 }, { size: 8193 }]) {
+    const identity = Object.assign({ ino: 4242, mtime: 1700000000, size: 8192 }, swap)
+    const verdict = G.checkBinary("/usr/bin/glancectl", statLines(lines, identity), first.identity)
+    assert.strictEqual(verdict.ok, true, verdict.reason)
+    assert.strictEqual(verdict.changed, true, "replacement not noticed: " + JSON.stringify(swap))
+  }
+
+  // A refusal never hands back an identity to carry forward.
+  const refused = G.checkBinary("/tmp/glancectl", statLines(["0 755 directory /", "0 1777 directory /tmp", "1000 755 regular file /tmp/glancectl"]), first.identity)
+  assert.strictEqual(refused.ok, false)
+  assert.strictEqual(refused.identity, null)
+
+  assert.strictEqual(G.sameIdentity(first.identity, null), false)
+  assert.strictEqual(G.sameIdentity(null, null), false)
+  assert.ok(G.describeIdentity(first.identity).includes("4242"))
 })
 
 let failed = 0

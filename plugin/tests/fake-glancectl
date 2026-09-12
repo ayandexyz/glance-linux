@@ -10,6 +10,21 @@ case $mode in
   # A megabyte of valid-looking JSON, at once: the backend must kill it at
   # the cap and refuse to parse what it kept.
   flood) head -c 1048576 /dev/zero | tr '\0' '{'; exit 0 ;;
+  # Never returns, and leaves a descendant behind it. Both sit in the process
+  # group timeout(1) made, so the deadline has to reach both: the grandchild
+  # records the signal it got, which is how tests/run tells a killed tree from
+  # a killed process.
+  hang)
+    if [[ -n ${GLANCE_FAKE_DESCENDANT:-} ]]; then
+      (
+        trap 'printf "terminated\n" >"$GLANCE_FAKE_DESCENDANT"; exit 0' TERM
+        printf '%s\n' "$BASHPID" >"$GLANCE_FAKE_DESCENDANT.pid"
+        sleep 300
+      ) &
+    fi
+    sleep 300
+    exit 0
+    ;;
 esac
 # What the plugin handed us for an environment, so tests/run can check that
 # PATH was pinned and the interpreter overrides were dropped.
