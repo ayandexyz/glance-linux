@@ -8,8 +8,10 @@ here=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 lock=${OMARCHY_PATH:-/usr/share/omarchy}/shell/plugins/lock
 if (( EUID != 0 )); then echo "run with sudo: sudo $0" >&2; exit 1; fi
 [[ -f $lock/Service.qml ]] || { echo "lock plugin not found at $lock" >&2; exit 1; }
+# Back up whatever is there unless it is already ours: after an Omarchy update
+# the stock file is a *new* stock file, and revert.sh must restore that one.
 for f in LockView.qml Service.qml; do
-  [[ -f $lock/$f.orig ]] || cp -p "$lock/$f" "$lock/$f.orig"
+  grep -q 'faceMessagePrefix\|FaceUnlockIndicator' "$lock/$f" || cp -p "$lock/$f" "$lock/$f.orig"
 done
 install -m 644 "$here/FaceUnlockIndicator.qml" "$lock/FaceUnlockIndicator.qml"
 install -m 644 "$here/unlock-spin.png" "$lock/unlock-spin.png"

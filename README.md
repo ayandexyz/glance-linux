@@ -37,6 +37,13 @@ cues here defeat a printed photo and a photo on a phone screen with reasonable
 confidence. They do **not** reliably defeat a video of you. This is a
 convenience feature, not a security upgrade.
 
+Two guard rails come with that. Five failed scans in a row with a face in
+view lock face unlock out for five minutes, so a looping hands-free lock
+screen is not a free brute-force surface (`--max-failures`, `--lockout`). And
+`SECURITY.md` spells out the trust boundary: the daemon runs as your user, so
+code already running as you could subvert it — the same boundary Howdy and
+the shell's own lock have, but one you should read before relying on it.
+
 ## Status
 
 | Piece | State |
@@ -51,7 +58,7 @@ convenience feature, not a security upgrade.
 | Guided enrollment (`glanced/poses.py`, `--gui` tick ring) | Complete — five directions, after the macOS onboarding sweep |
 | `pam_glance` + `glancectl setup-pam` | Complete — see `pam/README.md` |
 | Omarchy plugin (`plugin/`) | Bar widget + panel — see `plugin/README.md` |
-| Lock screen indicator (`patches/omarchy-lock-faceid/`) | Face ID-style capsule with a live camera view — a patch to Omarchy's lock plugin |
+| Lock screen indicator (`patches/omarchy-lock-faceid/`) | Face ID-style capsule with a live camera view — a patch to Omarchy's lock plugin, applied by `glancectl setup-lock` and re-applied after `omarchy update` by a post-update hook |
 
 ## Install
 
@@ -61,12 +68,14 @@ there is nothing to download and nothing to build:
 
 ```bash
 yay -S glanced
-omarchy plugin add https://github.com/ayan-de/omarchy-glance.git --enable
+omarchy plugin add https://github.com/ayandexyz/omarchy-glance.git --enable
 ```
 
 Then click the bar icon and take the one button it offers, three times: **Start
 daemon**, **Enroll** (the guided sweep opens in a window), **Wire lock screen**
-(a terminal, for the one step that needs your password). `packaging/aur/` holds
+(a terminal, for the one step that needs your password). A fourth, **Add lock
+indicator**, is optional: the Face ID-style capsule on the lock screen, kept
+in place across `omarchy update` by a hook. `packaging/aur/` holds
 the PKGBUILD and the release runbook.
 
 The package deliberately does not touch `/etc/pam.d` itself. Changing how the
@@ -90,7 +99,8 @@ packaging/install.sh                             # user service + plugin symlink
 glancectl enroll --gui --name "$USER" --remember # guided sweep, sets the passphrase
 glancectl authenticate                       # one full scan: recognition + liveness
 glancectl setup-pam                          # wire the lock screen (sudo; keep a root shell open)
-omarchy plugin enable io.github.ayan-de.glance          # the bar widget
+glancectl setup-lock                         # optional: the lock screen indicator + its post-update hook
+omarchy plugin enable io.github.ayandexyz.glance          # the bar widget
 ```
 
 Lock the screen, press Enter (shell lock: any character then Enter), look at

@@ -9,7 +9,7 @@ const assert = require("assert")
 
 const source = fs.readFileSync(path.join(__dirname, "..", "GlanceLogic.js"), "utf8")
   .replace(/^\.pragma library\s*$/m, "")
-const G = vm.runInNewContext(source + "\n;({ parseStatus, stateLabel, nextStep, outcomeLabel, outcomeSeverity, missingModels, identityLine, elapsed, lastScanText, lastScanReason, parseActionResult, clamp, lockLabel, nextAction, launchCommand, pathSyntaxProblem, pathPrefixes, statCommand, checkBinary, appendCapped, childEnvironment, bounded, deadlineHit, sameIdentity, describeIdentity, verifiedCommand, identityToken, EXEC_VERIFIER, PYTHON3, SYSTEMCTL, SETSID, LAUNCH_TERMINAL, STAT, TIMEOUT, DEFAULT_GLANCECTL, SAFE_PATH, CHECK_DEADLINE_SEC, STATUS_DEADLINE_SEC, ACTION_DEADLINE_SEC, LAUNCH_DEADLINE_SEC, KILL_GRACE_SEC })")
+const G = vm.runInNewContext(source + "\n;({ parseStatus, stateLabel, nextStep, outcomeLabel, outcomeSeverity, missingModels, identityLine, elapsed, lastScanText, lastScanReason, parseActionResult, clamp, lockLabel, indicatorLabel, nextAction, launchCommand, pathSyntaxProblem, pathPrefixes, statCommand, checkBinary, appendCapped, childEnvironment, bounded, deadlineHit, sameIdentity, describeIdentity, verifiedCommand, identityToken, EXEC_VERIFIER, PYTHON3, SYSTEMCTL, SETSID, LAUNCH_TERMINAL, STAT, TIMEOUT, DEFAULT_GLANCECTL, SAFE_PATH, CHECK_DEADLINE_SEC, STATUS_DEADLINE_SEC, ACTION_DEADLINE_SEC, LAUNCH_DEADLINE_SEC, KILL_GRACE_SEC })")
 // Objects built inside the vm have a foreign Object prototype, which trips
 // deepStrictEqual; compare by value instead.
 function assertSame(actual, expected, message) {
@@ -148,6 +148,29 @@ test("lock label reflects which PAM stack carries the module", () => {
   assert.strictEqual(G.lockLabel(G.parseStatus(JSON.stringify({ ...online, pam: { module: false, wired: false } }))), "Module not installed")
   assert.strictEqual(G.lockLabel(G.parseStatus(JSON.stringify({ ...online, pam: { module: true, wired: false } }))), "Not wired")
   assert.strictEqual(G.lockLabel(G.parseStatus(JSON.stringify({ ...online, pam: undefined }))), "")
+})
+
+test("the indicator row tracks the lock patch and its hook", () => {
+  const withLock = (lock) => G.parseStatus(JSON.stringify({ ...online, lock }))
+  assert.strictEqual(G.indicatorLabel(withLock(undefined)), "")
+  assert.strictEqual(G.indicatorLabel(withLock({ available: false, patched: false, hook: false })), "")
+  assert.strictEqual(G.indicatorLabel(withLock({ available: true, patched: false, hook: true })), "Indicator missing")
+  assert.strictEqual(G.indicatorLabel(withLock({ available: true, patched: true, hook: false })), "Indicator on, no update hook")
+  assert.strictEqual(G.indicatorLabel(withLock({ available: true, patched: true, hook: true })), "Indicator on, survives updates")
+})
+
+test("a missing indicator is the last setup step, after PAM", () => {
+  const missing = { available: true, patched: false, hook: false }
+  assert.strictEqual(action({ lock: missing }).key, "setup-lock")
+  assert.strictEqual(action({ lock: missing }).terminal, true)
+  assert.strictEqual(action({ lock: missing, pam: { module: true, wired: false } }).key, "setup-pam")
+  assert.strictEqual(action({ lock: { available: true, patched: true, hook: false } }), null)
+  assert.strictEqual(action({ lock: { available: false, patched: false, hook: false } }), null)
+})
+
+test("a lockout reads as something to look at", () => {
+  assert.strictEqual(G.outcomeLabel("locked_out"), "Locked out")
+  assert.strictEqual(G.outcomeSeverity("locked_out"), "bad")
 })
 
 test("outcomes map to labels and severities", () => {

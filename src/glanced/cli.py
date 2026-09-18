@@ -37,6 +37,7 @@ OUTCOME_TEXT = {
     "no_face": "no face seen",
     "not_armed": "daemon not armed",
     "error": "error",
+    "locked_out": "LOCKED OUT",
 }
 
 
@@ -312,9 +313,10 @@ def _status(args: argparse.Namespace) -> int:
             "identities": [],
             "lastScan": None,
         }
-        from . import pamsetup
+        from . import locksetup, pamsetup
 
         payload["pam"] = pamsetup.status()
+        payload["lock"] = locksetup.status()
 
     def human(p: dict) -> None:
         if not p["reachable"]:
@@ -324,6 +326,8 @@ def _status(args: argparse.Namespace) -> int:
             print(f"armed:      {p['armed']}")
             print(f"liveness:   {p['mode']}")
             print(f"camera:     {p['camera']}")
+            if p.get("lockedOut"):
+                print(f"locked out: {p['lockedOut']}s remaining")
         print(f"enrolled:   {p['enrolled']}")
         print(f"models:     landmarker={p['models']['landmarker']} arcface={p['models']['arcface']}")
         pam = p.get("pam")
@@ -337,6 +341,12 @@ def _status(args: argparse.Namespace) -> int:
             else:
                 lock = "not wired (glancectl setup-pam)"
             print(f"lock screen: {lock}")
+        indicator = p.get("lock")
+        if indicator and indicator.get("available"):
+            if indicator["patched"]:
+                print("indicator:  applied" + ("" if indicator["hook"] else " (no post-update hook: glancectl setup-lock)"))
+            else:
+                print("indicator:  not applied (glancectl setup-lock)")
         for identity in p.get("identities", []):
             flag = "enabled" if identity["enabled"] else "disabled"
             print(f"  - {identity['name']} ({identity['captures']} captures, {flag})")
@@ -362,6 +372,16 @@ def _setup_pam(args: argparse.Namespace) -> int:
         )
     except subprocess.CalledProcessError as error:
         print(f"setup-pam: command failed: {' '.join(map(str, error.cmd))}", file=sys.stderr)
+        return 1
+
+
+def _setup_lock(args: argparse.Namespace) -> int:
+    from . import locksetup
+
+    try:
+        return locksetup.setup(remove=args.remove)
+    except subprocess.CalledProcessError as error:
+        print(f"setup-lock: command failed: {' '.join(map(str, error.cmd))}", file=sys.stderr)
         return 1
 
 
@@ -451,6 +471,8 @@ def _daemon(args: argparse.Namespace) -> int:
         no_face_timeout=args.no_face_timeout,
         preview=not args.no_preview,
         relock_after=args.relock_after or None,
+        max_failures=args.max_failures,
+        lockout_seconds=args.lockout,
     )
     if daemon.arm_from_file():
         logging.info("armed from remembered passphrase")
@@ -526,6 +548,12 @@ def main(argv: list[str] | None = None) -> int:
     setup_pam.add_argument("--remove", action="store_true", help="strip pam_glance from every lock stack")
     setup_pam.set_defaults(func=_setup_pam)
 
+    setup_lock = subparsers.add_parser(
+        "setup-lock", help="put the Face ID-style indicator on the Omarchy lock screen (uses sudo)"
+    )
+    setup_lock.add_argument("--remove", action="store_true", help="restore the stock lock screen files")
+    setup_lock.set_defaults(func=_setup_lock)
+
     status = subparsers.add_parser("status", help="query the running daemon")
     status.add_argument("--json", action="store_true")
     status.set_defaults(func=_status)
@@ -554,6 +582,10 @@ def main(argv: list[str] | None = None) -> int:
                         help="never write camera frames for the lock screen indicator to display")
     daemon.add_argument("--relock-after", type=float, default=0.0,
                         help="disarm after this many idle seconds (0 = never)")
+    daemon.add_argument("--max-failures", type=int, default=5,
+                        help="consecutive failed scans with a face in view before a lockout (0 = never)")
+    daemon.add_argument("--lockout", type=float, default=300.0,
+                        help="seconds face unlock stays off after that many failures")
     daemon.set_defaults(func=_daemon)
 
     args = parser.parse_args(argv)

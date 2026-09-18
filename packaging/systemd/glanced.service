@@ -1,6 +1,6 @@
 [Unit]
 Description=Glance face unlock daemon
-Documentation=https://github.com/ayan-de/glance-linux
+Documentation=https://github.com/ayandexyz/glance-linux
 After=graphical-session.target
 PartOf=graphical-session.target
 

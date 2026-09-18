@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
-  "id": "io.github.ayan-de.glance",
+  "id": "io.github.ayandexyz.glance",
   "name": "Glance Face Unlock",
-  "version": "0.1.4",
+  "version": "0.2.0",
   "author": "Ayan De",
   "license": "MIT",
   "description": "Face unlock with liveness detection: armed state, enrolled identities, the last scan's verdict, and a test scan, in a native Omarchy bar panel.",

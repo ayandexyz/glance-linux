@@ -51,6 +51,9 @@ class Outcome(Enum):
     NOT_ARMED = "not_armed"
     #: Camera or model failure. Never an unlock; the reason says what broke.
     ERROR = "error"
+    #: Too many failed scans in a row; the camera is not opened again until
+    #: the cooldown passes. The reason says how long.
+    LOCKED_OUT = "locked_out"
 
 
 @dataclass

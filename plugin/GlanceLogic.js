@@ -139,6 +139,7 @@ function parseStatus(text) {
     camera: String(parsed.camera || ""),
     models: parsed.models && typeof parsed.models === "object" ? parsed.models : {},
     pam: parsed.pam && typeof parsed.pam === "object" ? parsed.pam : null,
+    lock: parsed.lock && typeof parsed.lock === "object" ? parsed.lock : null,
     identities: listOrEmpty(parsed.identities),
     lastScan: parsed.lastScan && typeof parsed.lastScan === "object" ? parsed.lastScan : null
   }
@@ -151,7 +152,8 @@ var OUTCOME_LABELS = {
   timed_out: "Timed out",
   no_face: "No face seen",
   not_armed: "Not armed",
-  error: "Error"
+  error: "Error",
+  locked_out: "Locked out"
 }
 
 function outcomeLabel(outcome) {
@@ -164,7 +166,7 @@ function outcomeLabel(outcome) {
 function outcomeSeverity(outcome) {
   var key = String(outcome || "")
   if (key === "unlocked") return "good"
-  if (key === "spoof_denied" || key === "error") return "bad"
+  if (key === "spoof_denied" || key === "error" || key === "locked_out") return "bad"
   return "neutral"
 }
 
@@ -237,6 +239,11 @@ function nextAction(status, glancectl, user) {
                   + "This opens a terminal and asks for your password:",
                   "Wire lock screen", "\udb80\udd83", [ctl, "setup-pam"], true, true)
   }
+  if (status.lock && status.lock.available === true && status.lock.patched !== true) {
+    return action("setup-lock", "Face unlock works, but the lock screen has no indicator "
+                  + "(an Omarchy update resets it). This opens a terminal and asks for your password:",
+                  "Add lock indicator", "\udb80\udcf8", [ctl, "setup-lock"], true, true)
+  }
   return null
 }
 
@@ -288,6 +295,14 @@ function lockLabel(status) {
   if (pam.hyprlock === true) stacks.push("hyprlock")
   if (stacks.length > 0) return "On Enter · " + stacks.join(", ")
   return "Not wired"
+}
+
+// The lock screen indicator: absent on a stock lock screen, and reverted by
+// every Omarchy update until the post-update hook puts it back.
+function indicatorLabel(status) {
+  if (!status || !status.lock || status.lock.available !== true) return ""
+  if (status.lock.patched !== true) return "Indicator missing"
+  return status.lock.hook === true ? "Indicator on, survives updates" : "Indicator on, no update hook"
 }
 
 function identityLine(identity) {

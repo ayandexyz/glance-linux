@@ -1,0 +1,43 @@
+name: ci
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      # The liveness model, the daemon's socket surface, the PAM-stack and
+      # lock-patch text transforms and the enrollment store need nothing but
+      # numpy and cryptography: no camera, no models, no display.
+      - run: pip install -e '.[dev]' cryptography opencv-python-headless
+      - run: python -m pytest -q
+
+  pam-module:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y libpam0g-dev
+      - run: make -C pam
+
+  plugin:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: node plugin/tests/test_glance_logic.js
+      - run: python3 -c 'import json; m = json.load(open("plugin/manifest.json")); assert all(k in m for k in ("schemaVersion", "id", "name", "version", "author", "description", "kinds", "entryPoints")), m'
+
+  shell:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash -n packaging/install.sh patches/omarchy-lock-faceid/apply.sh patches/omarchy-lock-faceid/revert.sh packaging/hooks/repair-glance-lock.hook

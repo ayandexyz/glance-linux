@@ -1,11 +1,11 @@
-# Maintainer: Ayan De <sayandedotcom@gmail.com>
+# Maintainer: Ayan De <deayan252@gmail.com>
 
 pkgname=glanced
-pkgver=0.1.1
+pkgver=0.2.0
 pkgrel=1
 pkgdesc="Face unlock for Linux with real liveness detection"
 arch=('x86_64')
-url="https://github.com/ayan-de/glance-linux"
+url="https://github.com/ayandexyz/glance-linux"
 license=('MIT')
 
 # python-onnxruntime is a virtual name: python-onnxruntime-cpu provides it, and
@@ -39,7 +39,7 @@ source=(
   "buffalo_s.zip::https://github.com/deepinsight/insightface/releases/download/v0.7/buffalo_s.zip"
 )
 sha256sums=(
-  'e2ea1e4ce2dcc9c25e0cde531a5233da9f6f7eaafe3ed06a96cb51ff8189d7be'
+  'SKIP'  # filled in at release time; see README.md step 2
   '64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff'
   'd85a87f503f691807cd8bb97128bdf7a0660326cd9cd02657127fa978bab8b5e'
 )
@@ -82,6 +82,17 @@ package() {
     > "$srcdir/glanced.service.packaged"
   install -Dm644 "$srcdir/glanced.service.packaged" \
     "$pkgdir/usr/lib/systemd/user/glanced.service"
+
+  # The lock screen indicator and the hook that re-applies it after an
+  # Omarchy update. Root-owned here is what lets the hook run them with a
+  # non-interactive sudo; see src/glanced/locksetup.py.
+  install -dm755 "$pkgdir/usr/share/$pkgname/lock-faceid"
+  install -m644 patches/omarchy-lock-faceid/{FaceUnlockIndicator.qml,LockView.qml,Service.qml,unlock-spin.png} \
+    "$pkgdir/usr/share/$pkgname/lock-faceid/"
+  install -m755 patches/omarchy-lock-faceid/{apply.sh,revert.sh} \
+    "$pkgdir/usr/share/$pkgname/lock-faceid/"
+  install -Dm755 packaging/hooks/repair-glance-lock.hook \
+    "$pkgdir/usr/share/$pkgname/hooks/repair-glance-lock.hook"
 
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
   install -Dm644 NOTICE "$pkgdir/usr/share/licenses/$pkgname/NOTICE"

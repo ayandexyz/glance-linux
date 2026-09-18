@@ -27,8 +27,10 @@ if (( uninstall )); then
   rm -f "$unit_dir/glanced.service"
   rm -f "$plugin_dir/$plugin_id"
   [[ -L $HOME/.local/bin/glancectl ]] && rm -f "$HOME/.local/bin/glancectl"
+  rm -f "${XDG_CONFIG_HOME:-$HOME/.config}/omarchy/hooks/post-update.d/repair-glance-lock.hook"
   systemctl --user daemon-reload
-  echo "removed the service and the plugin link (enrollment in $data_dir is untouched)"
+  echo "removed the service, the plugin link and the post-update hook (enrollment in $data_dir is untouched)"
+  echo "still wired, if you ran them: glancectl setup-pam --remove, glancectl setup-lock --remove"
   exit 0
 fi
 

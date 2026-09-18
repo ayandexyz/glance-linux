@@ -14,7 +14,7 @@ glanced is installed. Three steps to a working face unlock:
 
 Or install the Omarchy widget and press the button it offers for each:
 
-  omarchy plugin add https://github.com/ayan-de/omarchy-glance.git --enable
+  omarchy plugin add https://github.com/ayandexyz/omarchy-glance.git --enable
 
 Both models are already on disk in /usr/share/glanced/models; there is nothing
 to download. `glancectl status` explains whatever is still missing.

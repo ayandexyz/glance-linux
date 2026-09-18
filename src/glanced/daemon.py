@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Optional
 
-from . import ipc, models, pamsetup, paths
+from . import ipc, locksetup, models, pamsetup, paths
 from .preview import PreviewWriter
 from .liveness import LivenessMode
 from .pipeline import DEFAULT_SCAN_TIMEOUT, Outcome, ScanResult, UnlockPipeline
@@ -33,6 +33,17 @@ log = logging.getLogger("glanced")
 #: this module *before* the password one, so an absent face must not make a
 #: typed password wait the full scan timeout.
 DEFAULT_NO_FACE_TIMEOUT = 3.0
+
+#: Consecutive failed scans *with a face in view* before the daemon refuses to
+#: scan for a while. A hands-free lock screen rescans in a loop, which would
+#: otherwise hand a photo or a video unlimited free attempts. An empty room
+#: does not count: no face, a broken camera or a disarmed daemon is not an
+#: attempt by anyone.
+DEFAULT_MAX_FAILURES = 5
+DEFAULT_LOCKOUT_SECONDS = 300.0
+
+#: Outcomes that count as a failed attempt by someone who was there.
+_FAILED_ATTEMPT = frozenset({Outcome.NO_MATCH, Outcome.SPOOF_DENIED, Outcome.TIMED_OUT})
 
 
 @dataclass
@@ -80,6 +91,8 @@ class Daemon:
         no_face_timeout: float = DEFAULT_NO_FACE_TIMEOUT,
         relock_after: Optional[float] = None,
         preview: bool = True,
+        max_failures: int = DEFAULT_MAX_FAILURES,
+        lockout_seconds: float = DEFAULT_LOCKOUT_SECONDS,
         processor_factory: Optional[Callable[[], Any]] = None,
     ) -> None:
         self.mode = mode
@@ -94,6 +107,10 @@ class Daemon:
         self.store = EnrollmentStore()
         self.last_scan: Optional[dict[str, Any]] = None
         self.scanning = False
+        self.max_failures = max_failures
+        self.lockout_seconds = lockout_seconds
+        self.failures = 0
+        self._locked_until = 0.0
         self._processor = None
         self._processor_factory = processor_factory or self._default_processor
         self._lock = threading.Lock()
@@ -231,12 +248,15 @@ class Daemon:
             "armed": self.session.armed,
             "mode": self.mode.value,
             "scanning": self.scanning,
+            "failures": self.failures,
+            "lockedOut": round(self.locked_out_for(), 1) or None,
             "enrolled": self.store_path.exists(),
             "remembered": paths.PASSPHRASE_FILE.exists(),
             "camera": self.device,
             "preview": self.preview,
             "models": models.status(),
             "pam": pamsetup.status(),
+            "lock": locksetup.status(),
             "identities": [
                 {"name": i.name, "enabled": i.enabled, "captures": int(len(i.embeddings))}
                 for i in self.store.identities
@@ -261,20 +281,42 @@ class Daemon:
         decides or the scan times out. Records the outcome for the status
         socket, and never raises — a broken camera is a failed scan."""
         started = time.monotonic()
-        self.scanning = True
-        try:
-            result = self._scan()
-        except Exception as error:
-            log.exception("scan failed")
-            result = ScanResult(Outcome.ERROR, reason=f"{type(error).__name__}: {error}")
-        finally:
-            self.scanning = False
+        remaining = self.locked_out_for()
+        if remaining > 0:
+            result = ScanResult(
+                Outcome.LOCKED_OUT,
+                reason=f"{self.max_failures} failed scans in a row; face unlock resumes in {int(remaining) + 1}s.",
+            )
+        else:
+            self.scanning = True
+            try:
+                result = self._scan()
+            except Exception as error:
+                log.exception("scan failed")
+                result = ScanResult(Outcome.ERROR, reason=f"{type(error).__name__}: {error}")
+            finally:
+                self.scanning = False
+            self._count(result)
 
         self.last_scan = {**_describe(result), "at": time.time(), "duration": round(time.monotonic() - started, 2)}
         log.info("scan: %s%s", result.outcome.value, f" ({result.reason})" if result.reason else "")
         if result.outcome is Outcome.UNLOCKED:
             self.session.touch()
         return result
+
+    def locked_out_for(self) -> float:
+        """Seconds until the daemon will scan again; 0 when it will now."""
+        return max(0.0, self._locked_until - time.monotonic())
+
+    def _count(self, result: ScanResult) -> None:
+        if result.outcome is Outcome.UNLOCKED:
+            self.failures = 0
+        elif result.outcome in _FAILED_ATTEMPT and self.max_failures > 0:
+            self.failures += 1
+            if self.failures >= self.max_failures:
+                self._locked_until = time.monotonic() + self.lockout_seconds
+                self.failures = 0
+                log.warning("%d failed scans in a row; refusing to scan for %.0fs", self.max_failures, self.lockout_seconds)
 
     def _scan(self) -> ScanResult:
         if not self.session.armed:

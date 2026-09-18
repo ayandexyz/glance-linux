@@ -14,8 +14,8 @@ import "GlanceLogic.js" as GlanceLogic
 // running, PAM still talks to the daemon exactly the same.
 Ui.Panel {
   id: root
-  moduleName: "io.github.ayan-de.glance"
-  ipcTarget: "io.github.ayan-de.glance"
+  moduleName: "io.github.ayandexyz.glance"
+  ipcTarget: "io.github.ayandexyz.glance"
   manageIpc: false
 
   readonly property color foreground: bar ? bar.foreground : Color.foreground
@@ -303,6 +303,16 @@ Ui.Panel {
             width: parent.width
             text: GlanceLogic.lockLabel(root.status)
             color: root.status && root.status.pam && root.status.pam.wired === true ? root.foreground : root.dim
+            wrapMode: Text.WordWrap
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.bodySmall
+          }
+
+          Text {
+            width: parent.width
+            visible: text !== ""
+            text: GlanceLogic.indicatorLabel(root.status)
+            color: root.status && root.status.lock && root.status.lock.patched === true ? root.foreground : root.dim
             wrapMode: Text.WordWrap
             font.family: root.fontFamily
             font.pixelSize: Style.font.bodySmall

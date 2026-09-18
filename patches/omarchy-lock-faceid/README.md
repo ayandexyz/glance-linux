@@ -11,7 +11,15 @@ the macOS app.
 
 This is a patch to Omarchy's own lock plugin (`shell/plugins/lock/`), because
 nothing outside the session-lock surface can draw over it. It is the shape of
-an upstream change, previewed locally. An Omarchy update overwrites it.
+an upstream change, previewed locally. An Omarchy update overwrites it —
+which is why `glancectl setup-lock` is the way to apply it rather than
+`apply.sh` by hand: it also installs a `post-update` hook
+(`packaging/hooks/repair-glance-lock.hook`) that puts the patch back at the
+end of `omarchy update`, from the root-owned copy the `glanced` package
+installs under `/usr/share/glanced/lock-faceid/`. From a source checkout the
+hook only notifies; the daemon's status (and the bar panel) shows whether the
+patch is currently applied either way. `glancectl setup-lock --remove` runs
+`revert.sh` and drops the hook.
 
 ## How it knows a scan is happening
 

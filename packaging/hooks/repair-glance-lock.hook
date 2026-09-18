@@ -1,0 +1,51 @@
+#!/bin/bash
+# Installed by `glancectl setup-lock` via `omarchy hook install post-update`.
+#
+# `omarchy update` overwrites the package-owned lock plugin, and with it the
+# Face ID-style indicator that `patches/omarchy-lock-faceid/apply.sh` put
+# there. This runs at the end of that update, while sudo is still
+# authenticated from its package step, and puts the indicator back.
+#
+# It only executes files from the root-owned copy the glanced package installs
+# under /usr/share/glanced. A warm sudo timestamp must never be spent running
+# whatever is sitting in a user-writable checkout; from a source checkout this
+# hook can only tell you to rerun `glancectl setup-lock` yourself.
+set -u
+
+lock="${OMARCHY_PATH:-/usr/share/omarchy}/shell/plugins/lock/Service.qml"
+[[ -f $lock ]] || lock=/usr/share/omarchy/shell/plugins/lock/Service.qml
+[[ -f $lock ]] || exit 0                       # no lock plugin here; nothing to repair
+
+grep -q 'faceMessagePrefix' "$lock" && exit 0  # still patched
+
+patch_dir=/usr/share/glanced/lock-faceid
+notify() {
+  echo "glanced: $1"
+  command -v notify-send >/dev/null && notify-send -u critical "Glance face unlock" "$1" || true
+}
+
+# Root-owned, not writable by anyone else, on every path component we execute.
+trusted() {
+  local f
+  for f in "$patch_dir" "$patch_dir/apply.sh"; do
+    [[ -e $f ]] || return 1
+    [[ $(stat -c '%u %a' "$f") =~ ^0\ [0-9]?[0-9][0145][0145]$ ]] || return 1
+  done
+}
+
+if ! trusted; then
+  notify "The lock screen indicator was reverted by the update. Run: glancectl setup-lock"
+  exit 0
+fi
+
+if ! sudo -n true 2>/dev/null; then
+  notify "The lock screen indicator was reverted by the update and sudo is not available here. Run: glancectl setup-lock"
+  exit 0
+fi
+
+if sudo -n bash "$patch_dir/apply.sh" >/dev/null; then
+  echo "glanced: lock screen indicator re-applied after update."
+else
+  notify "Re-applying the lock screen indicator failed. Run: glancectl setup-lock"
+fi
+exit 0

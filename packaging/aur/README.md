@@ -7,7 +7,9 @@ without downloading a model or compiling anything.
 ## What the package does and does not do
 
 Installs `/usr/bin/glancectl`, the Python package, `/usr/lib/security/pam_glance.so`,
-both models under `/usr/share/glanced/models/`, and a systemd **user** unit.
+both models under `/usr/share/glanced/models/`, the lock screen indicator and
+its post-update hook under `/usr/share/glanced/{lock-faceid,hooks}/`, and a
+systemd **user** unit.
 
 It does **not** edit `/etc/pam.d`, enable the service, or enroll anyone. Wiring
 a lock screen changes how the machine authenticates you, and that belongs to a
@@ -42,7 +44,7 @@ that `sufficient` ignores, and falls through to the password.
    repo, at the root:
 
        git subtree split --prefix=plugin -b omarchy-glance
-       git push git@github.com:ayan-de/omarchy-glance.git omarchy-glance:main
+       git push git@github.com:ayandexyz/omarchy-glance.git omarchy-glance:main
 
    Every install line in the docs points at that repo, so this happens before
    anything else is announced. `plugin/preview.png` rides along and lands at
@@ -52,13 +54,13 @@ that `sufficient` ignores, and falls through to the password.
 
 1. Tag the daemon repo and push the tag:
 
-       git tag -a v0.1.1 -m "glanced 0.1.1"
-       git push origin v0.1.1
+       git tag -a v0.2.0 -m "glanced 0.2.0"
+       git push origin v0.2.0
 
 2. Fill in the tarball checksum — it is `SKIP` in the committed PKGBUILD
    because the tag does not exist until step 1:
 
-       curl -sL https://github.com/ayan-de/glance-linux/archive/refs/tags/v0.1.1.tar.gz \
+       curl -sL https://github.com/ayandexyz/glance-linux/archive/refs/tags/v0.2.0.tar.gz \
          | sha256sum
 
    Replace the first entry of `sha256sums` with that value.
@@ -73,11 +75,11 @@ that `sufficient` ignores, and falls through to the password.
 
 4. Lint, then publish:
 
-       namcap PKGBUILD glanced-0.1.1-1-x86_64.pkg.tar.zst
+       namcap PKGBUILD glanced-0.2.0-1-x86_64.pkg.tar.zst
        makepkg --printsrcinfo > .SRCINFO
        git clone ssh://aur@aur.archlinux.org/glanced.git aur && cd aur
        cp ../PKGBUILD ../glanced.install ../.SRCINFO .
-       git add -A && git commit -m "glanced 0.1.1" && git push
+       git add -A && git commit -m "glanced 0.2.0" && git push
 
 `.SRCINFO` must be regenerated and committed on every version bump; the AUR
 rejects a push whose `.SRCINFO` disagrees with its `PKGBUILD`.

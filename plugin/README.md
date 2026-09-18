@@ -2,7 +2,7 @@
 
 ![The Glance panel beside the lock screen's face unlock indicator](preview.png)
 
-The shell half of [glance-linux](https://github.com/ayan-de/glance-linux): one
+The shell half of [glance-linux](https://github.com/ayandexyz/glance-linux): one
 bar icon and one panel for the `glanced` face-unlock daemon.
 
 - **Bar icon** shows the face-recognition glyph; it lights while a scan is in
@@ -12,7 +12,9 @@ bar icon and one panel for the `glanced` face-unlock daemon.
   screen is wired (on Enter, hands-free, or not yet), and what the last scan
   decided and why. When something is still missing it offers exactly one
   button for the one step that unblocks you — start the daemon, enroll, wire
-  the lock screen — with the command it will run printed underneath. Inline
+  the lock screen, add the lock screen indicator — with the command it will
+  run printed underneath. A lockout after repeated failed scans shows up as
+  the last scan's verdict. Inline
   **Arm** takes the passphrase (over stdin, never argv) and can remember it so
   the daemon arms itself at login. **Disarm** and **Test scan** are one click.
 
@@ -89,7 +91,7 @@ installed.
 | Dependency | Why | Where |
 |---|---|---|
 | Omarchy shell (Quattro) | hosts the plugin | ships with Omarchy |
-| `glanced` | every reading and every action in the panel is a `glancectl` subprocess | [ayan-de/glance-linux](https://github.com/ayan-de/glance-linux) |
+| `glanced` | every reading and every action in the panel is a `glancectl` subprocess | [ayandexyz/glance-linux](https://github.com/ayandexyz/glance-linux) |
 
 The daemon is **not** installed by adding this plugin, and this plugin never
 installs, patches, or elevates anything itself — it only runs `glancectl` as
@@ -99,7 +101,7 @@ you, and prints the command under every button so you can see what that is.
 
 ```bash
 yay -S glanced
-omarchy plugin add https://github.com/ayan-de/omarchy-glance.git --enable
+omarchy plugin add https://github.com/ayandexyz/omarchy-glance.git --enable
 ```
 
 Then click the bar icon and follow it. The panel asks for one thing at a time
@@ -121,7 +123,7 @@ editing:
 
 ```bash
 packaging/install.sh
-omarchy plugin enable io.github.ayan-de.glance
+omarchy plugin enable io.github.ayandexyz.glance
 ```
 
 Then set **glancectl path** in the widget's settings to the venv binary,
@@ -133,15 +135,15 @@ glancectl you pointed at and nothing else.
 ## Remove
 
 ```bash
-omarchy plugin disable io.github.ayan-de.glance
-omarchy plugin remove io.github.ayan-de.glance
+omarchy plugin disable io.github.ayandexyz.glance
+omarchy plugin remove io.github.ayandexyz.glance
 ```
 
 That takes the widget off the bar and deletes the plugin directory. It leaves
 the daemon alone: nothing about your enrollment, your PAM stack, or the
 `glanced` service belongs to this plugin. To undo those, run
-`glancectl setup-pam --remove` and `yay -R glanced` (or
-`packaging/install.sh --uninstall` from a checkout).
+`glancectl setup-pam --remove`, `glancectl setup-lock --remove` and
+`yay -R glanced` (or `packaging/install.sh --uninstall` from a checkout).
 
 ## Settings
 
@@ -153,9 +155,9 @@ the daemon alone: nothing about your enrollment, your PAM stack, or the
 ## IPC
 
 ```bash
-omarchy-shell io.github.ayan-de.glance toggle
-omarchy-shell io.github.ayan-de.glance refresh
-omarchy-shell io.github.ayan-de.glance scan
+omarchy-shell io.github.ayandexyz.glance toggle
+omarchy-shell io.github.ayandexyz.glance refresh
+omarchy-shell io.github.ayandexyz.glance scan
 ```
 
 ## Tests
