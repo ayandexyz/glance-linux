@@ -204,8 +204,17 @@ def test_attention_socket_is_group_readable_like_status(daemon):
 
 def test_attention_socket_ignores_anything_sent_to_it(daemon, landmarker):
     client = Subscriber()
+    # The first event proves the daemon has adopted the connection, and with
+    # it shut the read side. From here a send either lands in a buffer nobody
+    # reads or is refused with EPIPE — which of the two depends on the
+    # kernel's timing, and both are the point.
+    assert client.event()["state"] == "starting"
+    refused = 0
     for verb in ("authenticate", "arm", "status"):
-        client.sock.sendall(ipc.Request(verb, {"passphrase": "hunter2"}).encode())
+        try:
+            client.sock.sendall(ipc.Request(verb, {"passphrase": "hunter2"}).encode())
+        except (BrokenPipeError, ConnectionResetError):
+            refused += 1
     client.until("tracking")
     assert daemon.last_scan is None
     assert daemon.session.armed is False
