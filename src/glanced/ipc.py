@@ -6,12 +6,17 @@ Two very different clients, with very different trust:
 * **The Omarchy Quattro plugin** asks for status to draw, and nothing else. It
   is presentation only, and must never be able to cause or influence an unlock —
   if the shell is not running, unlock still works exactly the same.
+* **Attention subscribers** (a blur shield, an idle inhibitor) hold a
+  connection open and *receive* head-pose events. They send nothing the daemon
+  reads. See `attention.py`.
 
-That split is enforced by having two sockets with different permissions rather
-than one socket with a role field in the message, so a compromised shell plugin
-cannot reach the auth verb at all.
+That split is enforced by having separate sockets with different permissions
+rather than one socket with a role field in the message, so a compromised shell
+plugin cannot reach the auth verb at all.
 
-Messages are newline-delimited JSON.
+Messages on the request sockets are newline-delimited JSON, one request and
+one response per connection. The attention socket streams newline-delimited
+JSON events for as long as the client stays connected.
 """
 
 from __future__ import annotations
@@ -29,6 +34,7 @@ RUNTIME_DIR = Path(
 )
 AUTH_SOCKET = RUNTIME_DIR / "auth.sock"
 STATUS_SOCKET = RUNTIME_DIR / "status.sock"
+ATTENTION_SOCKET = RUNTIME_DIR / "attention.sock"
 
 
 @dataclass

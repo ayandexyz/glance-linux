@@ -40,6 +40,11 @@ vulnerability. You will get a reply within a week.
 - **The bar widget.** It runs `glancectl` only at a checked absolute path,
   with a pinned environment, bounded output and a process-tree deadline; see
   `plugin/README.md`.
+- **Attention subscribers.** `attention.sock` is publish-only: the daemon
+  never reads from it, so a client on it cannot reach any verb. What it
+  publishes is two angles, a presence bool and a confidence — never a frame,
+  never landmarks, never an embedding. It is group-readable like the status
+  socket, and `--no-attention` removes it.
 
 ### What it does not defend against: code running as you
 

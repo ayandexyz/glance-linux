@@ -11,6 +11,7 @@ Two frames come out of every grab, and the distinction matters to liveness:
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 from typing import Iterator, Optional, Sequence
 
@@ -63,12 +64,26 @@ class Camera:
             self._capture.release()
             self._capture = None
 
-    def frames(self) -> Iterator[np.ndarray]:
-        """Yield RGB frames until the device stops delivering."""
+    def frames(self, min_interval: float = 0.0) -> Iterator[np.ndarray]:
+        """Yield RGB frames until the device stops delivering.
+
+        `min_interval` throttles by wall clock: frames arriving sooner than
+        that after the last one yielded are grabbed and dropped without being
+        decoded or converted. That is how attention mode runs the landmarker
+        at 8 fps on a camera that only offers 30 — asking the driver for a
+        lower rate is a request most UVC webcams quietly ignore.
+        """
         if self._capture is None:
             raise RuntimeError("camera is not open")
+        next_at = 0.0
         while True:
-            ok, bgr = self._capture.read()
+            if not self._capture.grab():
+                return
+            now = time.monotonic()
+            if now < next_at:
+                continue
+            next_at = now + min_interval
+            ok, bgr = self._capture.retrieve()
             if not ok:
                 return
             yield cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)

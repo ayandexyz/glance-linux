@@ -1,6 +1,7 @@
 """The long-running user service.
 
-Runs as the user, owns the camera, and answers two sockets (see `ipc.py`).
+Runs as the user, owns the camera, answers two request sockets and streams
+head pose on a third (see `ipc.py` and `attention.py`).
 Started by systemd --user; see `packaging/systemd/glanced.service`.
 
 The daemon starts *disarmed*: the enrollment store is encrypted at rest and it
@@ -12,6 +13,7 @@ no stored login password to protect, because PAM does the authorizing.
 
 from __future__ import annotations
 
+import functools
 import logging
 import selectors
 import socket
@@ -22,6 +24,7 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 
 from . import ipc, locksetup, models, pamsetup, paths
+from .attention import DEFAULT_FPS, AttentionTracker, DisabledTracker
 from .preview import PreviewWriter
 from .liveness import LivenessMode
 from .pipeline import DEFAULT_SCAN_TIMEOUT, Outcome, ScanResult, UnlockPipeline
@@ -94,6 +97,10 @@ class Daemon:
         max_failures: int = DEFAULT_MAX_FAILURES,
         lockout_seconds: float = DEFAULT_LOCKOUT_SECONDS,
         processor_factory: Optional[Callable[[], Any]] = None,
+        attention: bool = True,
+        attention_fps: float = DEFAULT_FPS,
+        landmarker_factory: Optional[Callable[[], Any]] = None,
+        camera_factory: Optional[Callable[[str], Any]] = None,
     ) -> None:
         self.mode = mode
         self.device = device
@@ -113,6 +120,18 @@ class Daemon:
         self._locked_until = 0.0
         self._processor = None
         self._processor_factory = processor_factory or self._default_processor
+        # Head pose for the desktop. Separate landmarker, separate socket,
+        # and it yields the camera to any scan; see attention.py.
+        self.attention: AttentionTracker | DisabledTracker = (
+            AttentionTracker(
+                device=device,
+                fps=attention_fps,
+                landmarker_factory=landmarker_factory,
+                camera_factory=camera_factory,
+            )
+            if attention
+            else DisabledTracker()
+        )
         self._lock = threading.Lock()
         self._running = False
         self._servers: list[socket.socket] = []
@@ -155,15 +174,19 @@ class Daemon:
         status = ipc.listen(ipc.STATUS_SOCKET, 0o660)
         self._servers = [auth, status]
         selector = selectors.DefaultSelector()
-        selector.register(auth, selectors.EVENT_READ, self._handle_auth)
-        selector.register(status, selectors.EVENT_READ, self._handle_status)
+        selector.register(auth, selectors.EVENT_READ, functools.partial(self._serve_one, handler=self._handle_auth))
+        selector.register(status, selectors.EVENT_READ, functools.partial(self._serve_one, handler=self._handle_status))
+        if isinstance(self.attention, AttentionTracker):
+            attention = ipc.listen(ipc.ATTENTION_SOCKET, 0o660)
+            self._servers.append(attention)
+            selector.register(attention, selectors.EVENT_READ, self.attention.subscribe)
 
         # A daemon killed mid-scan leaves its last frame behind; drop it before
         # anything can read a picture of a face from a previous session.
         PreviewWriter().clear()
 
         self._running = True
-        log.info("listening on %s and %s", ipc.AUTH_SOCKET, ipc.STATUS_SOCKET)
+        log.info("listening on %s", ", ".join(server.getsockname() for server in self._servers))
         try:
             while self._running:
                 for key, _ in selector.select(timeout=1.0):
@@ -172,13 +195,12 @@ class Daemon:
                         connection, _ = server.accept()
                     except OSError:
                         continue
-                    threading.Thread(
-                        target=self._serve_one, args=(connection, key.data), daemon=True
-                    ).start()
+                    threading.Thread(target=key.data, args=(connection,), daemon=True).start()
         finally:
             selector.close()
             for server in self._servers:
                 server.close()
+            self.attention.close()
             if self._processor is not None:
                 self._processor.close()
 
@@ -254,6 +276,7 @@ class Daemon:
             "remembered": paths.PASSPHRASE_FILE.exists(),
             "camera": self.device,
             "preview": self.preview,
+            "attention": self.attention.status(),
             "models": models.status(),
             "pam": pamsetup.status(),
             "lock": locksetup.status(),
@@ -290,7 +313,10 @@ class Daemon:
         else:
             self.scanning = True
             try:
-                result = self._scan()
+                # Attention hands the camera over for the scan and takes it
+                # back afterwards; an auth request always has priority.
+                with self.attention.paused():
+                    result = self._scan()
             except Exception as error:
                 log.exception("scan failed")
                 result = ScanResult(Outcome.ERROR, reason=f"{type(error).__name__}: {error}")

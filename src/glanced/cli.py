@@ -328,6 +328,14 @@ def _status(args: argparse.Namespace) -> int:
             print(f"camera:     {p['camera']}")
             if p.get("lockedOut"):
                 print(f"locked out: {p['lockedOut']}s remaining")
+            attention = p.get("attention")
+            if attention:
+                if not attention["enabled"]:
+                    print("attention:  off (--no-attention)")
+                elif attention["tracking"]:
+                    print(f"attention:  tracking for {attention['subscribers']} subscriber(s) at {attention['fps']:.0f} fps")
+                else:
+                    print("attention:  idle, camera closed")
         print(f"enrolled:   {p['enrolled']}")
         print(f"models:     landmarker={p['models']['landmarker']} arcface={p['models']['arcface']}")
         pam = p.get("pam")
@@ -459,6 +467,36 @@ def _live(args: argparse.Namespace) -> int:
     )
 
 
+def _attention(args: argparse.Namespace) -> int:
+    from .attention import subscribe
+
+    def show(event: dict) -> bool:
+        if args.json:
+            print(json.dumps(event), flush=True)
+        elif event["state"] != "tracking":
+            print(f"[{event['state']}] {event.get('reason', '')}".rstrip(), flush=True)
+        elif not event["present"]:
+            print("no face", flush=True)
+        else:
+            print(
+                f"yaw {event['yaw']:+6.1f}\u00b0  pitch {event['pitch']:+6.1f}\u00b0  conf {event['conf']:.2f}",
+                flush=True,
+            )
+        return not args.once or event["state"] != "tracking"
+
+    try:
+        subscribe(ipc.ATTENTION_SOCKET, show)
+    except FileNotFoundError:
+        raise SystemExit("daemon not running, or started with --no-attention")
+    except BrokenPipeError:
+        pass  # `| head`: the reader went away, which is not an error
+    except (OSError, ConnectionError) as error:
+        raise SystemExit(f"daemon not reachable: {error}")
+    except KeyboardInterrupt:
+        pass
+    return 0
+
+
 def _daemon(args: argparse.Namespace) -> int:
     from .daemon import Daemon
     from .liveness import LivenessMode
@@ -473,6 +511,8 @@ def _daemon(args: argparse.Namespace) -> int:
         relock_after=args.relock_after or None,
         max_failures=args.max_failures,
         lockout_seconds=args.lockout,
+        attention=not args.no_attention,
+        attention_fps=args.attention_fps,
     )
     if daemon.arm_from_file():
         logging.info("armed from remembered passphrase")
@@ -556,6 +596,13 @@ def main(argv: list[str] | None = None) -> int:
 
     status = subparsers.add_parser("status", help="query the running daemon")
     status.add_argument("--json", action="store_true")
+
+    attention = subparsers.add_parser(
+        "attention", help="stream head pose events from the daemon (what a blur shield subscribes to)"
+    )
+    attention.add_argument("--json", action="store_true", help="print the raw event lines")
+    attention.add_argument("--once", action="store_true", help="exit after the first tracking event")
+    attention.set_defaults(func=_attention)
     status.set_defaults(func=_status)
 
     live = subparsers.add_parser(
@@ -584,6 +631,10 @@ def main(argv: list[str] | None = None) -> int:
                         help="disarm after this many idle seconds (0 = never)")
     daemon.add_argument("--max-failures", type=int, default=5,
                         help="consecutive failed scans with a face in view before a lockout (0 = never)")
+    daemon.add_argument("--no-attention", action="store_true",
+                        help="do not offer attention.sock; the camera is only ever opened for a scan")
+    daemon.add_argument("--attention-fps", type=float, default=8.0,
+                        help="landmarker rate while an attention subscriber is connected")
     daemon.add_argument("--lockout", type=float, default=300.0,
                         help="seconds face unlock stays off after that many failures")
     daemon.set_defaults(func=_daemon)

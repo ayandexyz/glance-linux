@@ -57,6 +57,7 @@ the shell's own lock have, but one you should read before relying on it.
 | `glancectl` (enroll, arm, authenticate, status, live, selftest) | Complete |
 | Guided enrollment (`glanced/poses.py`, `--gui` tick ring) | Complete — five directions, after the macOS onboarding sweep |
 | `pam_glance` + `glancectl setup-pam` | Complete — see `pam/README.md` |
+| Attention mode (`attention.sock`, `glancectl attention`) | Complete, tested — head pose for the desktop, see below |
 | Omarchy plugin (`plugin/`) | Bar widget + panel — see `plugin/README.md` |
 | Lock screen indicator (`patches/omarchy-lock-faceid/`) | Face ID-style capsule with a live camera view — a patch to Omarchy's lock plugin, applied by `glancectl setup-lock` and re-applied after `omarchy update` by a post-update hook |
 
@@ -147,6 +148,44 @@ the real decision logic against synthetic faces and prints every cue's reading
 and fire count, with no camera involved. `glancectl live` does the same against
 real frames.
 
+## Attention mode
+
+The daemon can also tell the desktop where you are looking. Connect to
+`attention.sock` and it streams one JSON line per frame:
+
+```json
+{"schemaVersion": 1, "t": 1234.5, "state": "tracking", "present": true, "yaw": -12.4, "pitch": 3.1, "conf": 1.0}
+```
+
+`yaw` and `pitch` are degrees (yaw positive when your head turns to your
+left, pitch positive when your chin comes down); `conf` is how far the face
+is above the size the landmarker is trusted at. `state` is `starting`,
+`tracking`, `paused` (an unlock scan has the camera) or `error` (it could not
+be opened; the daemon retries). `glancectl attention` prints the stream.
+
+This is what a blur shield — [omarchy-shy](https://github.com/ayandexyz/omarchy-shy),
+the ShyGlass idea done without screen capture — or an idle inhibitor
+subscribes to. Things that matter about it:
+
+- **It is not auth mode.** Attention needs the landmarker and the pose it
+  already computes, nothing else: no ArcFace, no template, no arming, no
+  passphrase. It works on a daemon that has never been armed for a user who
+  has never enrolled or touched `/etc/pam.d`.
+- **It is a third socket, publish-only.** Nothing a client sends is read, so
+  nothing on it can start or influence a scan. It emits *derived* values —
+  angles and a bool — never frames, never landmarks. `src/glanced/attention.py`
+  is short enough to check that claim in a minute.
+- **The camera has one owner.** The tracker holds it only while a subscriber
+  is connected — nothing listening, camera closed, LED off — and hands it
+  over the moment a scan asks, taking it back when the scan ends. An auth
+  request never waits on it for more than three seconds.
+- **It is cheap.** Eight landmarker passes a second at 640×360, about 8% of
+  one core on a laptop with the camera included. `--attention-fps` tunes it;
+  `--no-attention` removes the socket entirely.
+- **Clients fail open.** Only `tracking` says anything about where you are
+  looking. A client covering the screen treats every other state, and
+  silence, as "come down".
+
 ## The liveness model
 
 Five cues, two roles, and deliberately **no overall liveness percentage**.
@@ -231,6 +270,7 @@ Each is documented at its own site; the significant ones:
 
 ```
 src/glanced/   glanced        camera -> landmarks -> {ArcFace embed, liveness} -> verdict
+                              camera -> landmarks -> head pose            (attention.sock)
 pam/           pam_glance.so  talks to the daemon over a 0600 unix socket
 plugin/        Omarchy QML    bar widget + panel: status, arm/disarm, test scan
 ```
@@ -238,8 +278,9 @@ plugin/        Omarchy QML    bar widget + panel: status, arm/disarm, test scan
 Unlock lives in PAM, in `hyprlock`'s stack, and works whether or not the shell
 is running. The plugin is a thin client over a **separate, lower-privilege
 status socket** and is presentation only — it can never cause or influence an
-unlock. Two sockets rather than one with a role field, so a compromised shell
-plugin cannot reach the auth verb at all.
+unlock. Separate sockets rather than one with a role field, so a compromised
+shell plugin cannot reach the auth verb at all. The attention socket is the
+same idea one step further: it has no verbs at all.
 
 > When wiring `pam_glance`, keep a root TTY open. A broken PAM stack locks you
 > out of your own machine.
