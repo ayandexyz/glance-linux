@@ -167,7 +167,8 @@ class AttentionTracker:
             first = Event("paused", reason="unlock scan in progress") if self._pauses else Event("starting")
             try:
                 connection.sendall(first.encode())
-            except OSError:
+            except OSError as error:
+                log.info("attention subscriber dropped before its first event: %s", error)
                 connection.close()
                 return
             self._subscribers.append(connection)
