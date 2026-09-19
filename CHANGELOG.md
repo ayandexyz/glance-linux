@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- **Attention mode.** A third socket, `attention.sock`, streams head pose
+  (`present`, `yaw`, `pitch`, `conf` — derived values, never frames or
+  landmarks) to any connected client at `--attention-fps` (default 8). It
+  uses the landmarker only — no ArcFace, no arming, no enrollment — so it
+  works for anyone with a webcam. The camera is held only while someone is
+  subscribed and is handed over to an unlock scan on request, so an auth
+  request always has priority. `glancectl attention` prints the stream;
+  `glancectl daemon --no-attention` turns the socket off. This is what
+  `omarchy-shy` (a blur shield without screen capture) subscribes to.
+- `Camera.frames(min_interval)` drops frames without decoding them, which is
+  how attention runs the landmarker at 8 fps on a 30 fps camera.
+
 ## 0.2.0 — 2026-09-18
 
 First release under `ayandexyz`. Everything below is relative to 0.1.1.
