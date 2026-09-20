@@ -56,6 +56,13 @@ def _prompts_in_a_window(args: argparse.Namespace) -> bool:
 
 def _read_passphrase(args: argparse.Namespace, *, confirm: bool = False, error: str = "") -> str:
     if getattr(args, "passphrase_stdin", False):
+        # --passphrase-stdin is meant for scripts, where the prompt must stay
+        # off stdout so it never pollutes a piped stream, and the passphrase
+        # may legitimately be piped in. An interactive terminal is neither:
+        # there it is just a normal secret prompt, so suppress echo instead
+        # of letting readline print the passphrase in plain text.
+        if sys.stdin.isatty():
+            return getpass.getpass("Passphrase (input hidden): ")
         line = sys.stdin.readline()
         if not line:
             raise SystemExit("no passphrase on stdin")

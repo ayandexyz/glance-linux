@@ -230,7 +230,12 @@ class GuidedSession:
         if observation is not None:
             yaw, pitch = observation.face.yaw, observation.face.pitch
             if frame_width:
-                too_far = observation.face.bounding_box[2] < self.min_face_width_fraction * frame_width
+                # native_bounding_box is in native frame pixels, matching
+                # frame_width (the native frame's width). face.bounding_box is
+                # in working-resolution pixels and would double-count here.
+                native_box = getattr(observation, "native_bounding_box", None)
+                box = native_box if native_box is not None else observation.face.bounding_box
+                too_far = box[2] < self.min_face_width_fraction * frame_width
             holding = poses.matches(pose, yaw, pitch, widened=widened, tuning=self.tuning)
 
         completed = None
