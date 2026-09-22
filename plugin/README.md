@@ -100,13 +100,15 @@ you, and prints the command under every button so you can see what that is.
 ## Install
 
 ```bash
-pipx install 'glanced[runtime]'
+pipx install 'glanced[runtime,gui]'
 glancectl install-service
 omarchy plugin add https://github.com/ayandexyz/omarchy-glance.git --enable
 ```
 
 `install-service` fetches the models and writes the user unit, so the daemon
-is running before the plugin ever looks for it. Set **glancectl path** in the
+is running before the plugin ever looks for it. The `gui` extra is PySide6,
+which the **Enroll** button needs: it opens the passphrase window, because a
+button has no terminal to read a passphrase from. Set **glancectl path** in the
 widget's settings to the binary pipx installed, spelled out in full:
 `~/.local/share/pipx/venvs/glanced/bin/glancectl` with `~` expanded — the
 check refuses symlinks, so not the `~/.local/bin/glancectl` link.

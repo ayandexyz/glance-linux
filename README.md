@@ -67,10 +67,14 @@ From PyPI. `pipx` keeps the daemon in its own environment and puts
 `glancectl` on your PATH:
 
 ```bash
-pipx install 'glanced[runtime]'
+pipx install 'glanced[runtime,gui]'
 glancectl install-service            # ~16MB of models, the user unit, started
 omarchy plugin add https://github.com/ayandexyz/omarchy-glance.git --enable
 ```
+
+The `gui` extra is PySide6, for the enrollment window. The plugin's **Enroll**
+button always opens it: a button has no terminal to read a passphrase from,
+and argv is no place for a secret. Leave it out and that button fails.
 
 `install-service` fetches the models if they are missing and writes the same
 unit `packaging/install.sh` does, pointed at the `glancectl` that is running
