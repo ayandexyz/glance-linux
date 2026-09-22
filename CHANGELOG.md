@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.2 — 2026-09-22
+
+### Added
+- `glancectl status` reports `gui`: whether this install can open the
+  enrollment window. The Omarchy plugin reads it to choose between the window
+  and a terminal, so an install without the `gui` extra gets an **Enroll**
+  button that works instead of one that raises ImportError. Checked with
+  `find_spec`, so nothing imports Qt to answer it.
+
 ## 0.3.1 — 2026-09-22
 
 ### Added

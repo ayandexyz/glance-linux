@@ -15,6 +15,21 @@ _MISSING = (
 )
 
 
+def available() -> bool:
+    """Whether the window can be opened at all, without importing Qt.
+
+    `glancectl status` reports this so a caller with a button rather than a
+    terminal -- the Omarchy plugin -- can choose the terminal enrollment
+    instead of pressing a button that can only fail.
+    """
+    from importlib.util import find_spec
+
+    try:
+        return find_spec("PySide6") is not None
+    except (ImportError, ValueError):
+        return False
+
+
 def ask_passphrase(*, confirm: bool, error: str = "") -> Optional[str]:
     """Prompt for the passphrase in a window; None if the user cancelled.
 

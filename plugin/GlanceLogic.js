@@ -138,6 +138,10 @@ function parseStatus(text) {
     armed: parsed.armed === true,
     scanning: parsed.scanning === true,
     enrolled: parsed.enrolled === true,
+    // Whether that install can open the enrollment window. Absent on a
+    // glancectl older than this field, where --gui was the only path and
+    // assuming it is what that version did.
+    gui: parsed.gui === undefined ? true : parsed.gui === true,
     remembered: parsed.remembered === true,
     mode: String(parsed.mode || ""),
     camera: String(parsed.camera || ""),
@@ -230,6 +234,18 @@ function nextAction(status, glancectl, user) {
                   "Download models", "\udb80\udcac", [ctl, "fetch-model"], true, true)
   }
   if (!status.enrolled) {
+    // The window is the good version of this: a camera preview guiding the
+    // sweep. It needs PySide6, which `glanced[runtime]` does not carry, and a
+    // button has no terminal to fall back to for the passphrase -- so when the
+    // window is unavailable the enrollment is run in a terminal instead of
+    // offering a button that can only raise ImportError.
+    if (status.gui === false) {
+      return action("enroll", "No face enrolled yet. The enrollment window needs "
+                    + "the 'gui' extra, so this opens a terminal instead:",
+                    "Enroll", "\udb84\udc7b",
+                    [ctl, "enroll", "--name", String(user || "$USER"), "--remember"],
+                    true, true)
+    }
     return action("enroll", "No face enrolled yet.", "Enroll", "\udb84\udc7b",
                   [ctl, "enroll", "--name", String(user || "$USER"), "--gui", "--remember"],
                   false, true)

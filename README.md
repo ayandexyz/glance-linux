@@ -72,9 +72,11 @@ glancectl install-service            # ~16MB of models, the user unit, started
 omarchy plugin add https://github.com/ayandexyz/omarchy-glance.git --enable
 ```
 
-The `gui` extra is PySide6, for the enrollment window. The plugin's **Enroll**
-button always opens it: a button has no terminal to read a passphrase from,
-and argv is no place for a secret. Leave it out and that button fails.
+The `gui` extra is PySide6, for the enrollment window: a camera preview that
+guides the sweep. Leave it out and nothing breaks -- `glancectl status`
+reports the window as unavailable and the plugin's **Enroll** button runs the
+enrollment in a terminal instead -- but the window is the better version of
+that step.
 
 `install-service` fetches the models if they are missing and writes the same
 unit `packaging/install.sh` does, pointed at the `glancectl` that is running

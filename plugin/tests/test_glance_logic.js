@@ -441,6 +441,40 @@ test("every default candidate is a path the verifier will judge, not refuse on s
   }
 })
 
+test("without the gui extra, Enroll runs in a terminal instead of failing", () => {
+  const noGui = G.parseStatus(JSON.stringify({
+    schemaVersion: 1, reachable: true, armed: false, scanning: false,
+    enrolled: false, gui: false, models: { landmarker: true, arcface: true },
+    identities: [], lastScan: null,
+  }))
+  const next = G.nextAction(noGui, "/usr/bin/glancectl", "ayan")
+  assert.ok(!next.command.includes("--gui"), "must not ask for a window it cannot open")
+  assert.strictEqual(next.terminal, true, "a passphrase needs somewhere to be typed")
+  assert.deepStrictEqual(Array.from(next.command),
+    ["/usr/bin/glancectl", "enroll", "--name", "ayan", "--remember"])
+})
+
+test("with the gui extra, Enroll still opens the window", () => {
+  const withGui = G.parseStatus(JSON.stringify({
+    schemaVersion: 1, reachable: true, armed: false, scanning: false,
+    enrolled: false, gui: true, models: { landmarker: true, arcface: true },
+    identities: [], lastScan: null,
+  }))
+  const next = G.nextAction(withGui, "/usr/bin/glancectl", "ayan")
+  assert.ok(next.command.includes("--gui"))
+  assert.strictEqual(next.terminal, false)
+})
+
+test("a glancectl that does not report gui is treated as having the window", () => {
+  const legacy = G.parseStatus(JSON.stringify({
+    schemaVersion: 1, reachable: true, armed: false, scanning: false,
+    enrolled: false, models: { landmarker: true, arcface: true },
+    identities: [], lastScan: null,
+  }))
+  assert.strictEqual(legacy.gui, true, "absent must not mean unavailable")
+  assert.ok(G.nextAction(legacy, "/usr/bin/glancectl", "ayan").command.includes("--gui"))
+})
+
 let failed = 0
 for (const [name, fn] of tests) {
   try { fn(); console.log("  ok   " + name) } catch (error) { failed++; console.log("  FAIL " + name + "\n       " + error.message) }

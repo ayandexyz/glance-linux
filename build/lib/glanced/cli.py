@@ -297,6 +297,8 @@ def _authenticate(args: argparse.Namespace) -> int:
 
 
 def _status(args: argparse.Namespace) -> int:
+    from .gui import available as gui_available
+
     try:
         response = ipc.request(ipc.STATUS_SOCKET, "status", timeout=5.0)
         payload = {"reachable": True, **response.payload}
@@ -318,6 +320,10 @@ def _status(args: argparse.Namespace) -> int:
 
         payload["pam"] = pamsetup.status()
         payload["lock"] = locksetup.status()
+
+    # Whether this install can open the enrollment window. It is a property of
+    # the client, not the daemon, so it is set on both paths.
+    payload["gui"] = gui_available()
 
     def human(p: dict) -> None:
         if not p["reachable"]:
