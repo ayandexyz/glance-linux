@@ -66,6 +66,10 @@ the shell's own lock have, but one you should read before relying on it.
 From PyPI. `pipx` keeps the daemon in its own environment and puts
 `glancectl` on your PATH:
 
+`pipx` comes from `python-pipx` (`sudo pacman -S python-pipx`), and wiring the
+lock screen compiles a small PAM module, so `base-devel` and `pam` need to be
+there too -- `setup` says so if they are not.
+
 ```bash
 pipx install 'glanced[runtime,gui]'
 glancectl setup                      # models, service, PAM, lock indicator

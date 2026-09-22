@@ -99,6 +99,10 @@ you, and prints the command under every button so you can see what that is.
 
 ## Install
 
+`pipx` comes from `python-pipx` (`sudo pacman -S python-pipx`), and wiring the
+lock screen compiles a small PAM module, so `base-devel` and `pam` need to be
+there too -- `setup` says so if they are not.
+
 ```bash
 pipx install 'glanced[runtime,gui]'
 glancectl setup
