@@ -1,6 +1,7 @@
 """glancectl — the one command for everything that is not the daemon loop.
 
     fetch-model   download the landmarker and ArcFace networks
+    install-service  write and enable the glanced user service
     enroll        capture a face into the encrypted store
     forget        remove an identity from the store
     arm / disarm  give the running daemon its key, or take it back
@@ -393,6 +394,16 @@ def _setup_lock(args: argparse.Namespace) -> int:
         return 1
 
 
+def _install_service(args: argparse.Namespace) -> int:
+    from . import servicesetup
+
+    try:
+        return servicesetup.setup(remove=args.remove, mode=args.mode, enable=not args.no_enable)
+    except subprocess.CalledProcessError as error:
+        print(f"install-service: command failed: {' '.join(map(str, error.cmd))}", file=sys.stderr)
+        return 1
+
+
 def _selftest(args: argparse.Namespace) -> int:
     sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tests"))
     try:
@@ -593,6 +604,18 @@ def main(argv: list[str] | None = None) -> int:
     )
     setup_lock.add_argument("--remove", action="store_true", help="restore the stock lock screen files")
     setup_lock.set_defaults(func=_setup_lock)
+
+    install_service = subparsers.add_parser(
+        "install-service",
+        help="write and enable the glanced user service (what packaging/install.sh does)",
+    )
+    install_service.add_argument("--mode", default="light", choices=["light", "heavy"],
+                                 help="liveness mode the service runs the daemon in")
+    install_service.add_argument("--no-enable", action="store_true",
+                                 help="write the unit but do not enable or start it")
+    install_service.add_argument("--remove", action="store_true",
+                                 help="disable the service and delete the unit")
+    install_service.set_defaults(func=_install_service)
 
     status = subparsers.add_parser("status", help="query the running daemon")
     status.add_argument("--json", action="store_true")

@@ -63,14 +63,24 @@ the shell's own lock have, but one you should read before relying on it.
 
 ## Install
 
-Once `glanced` is on the AUR, the packaged path is two commands and three
-buttons — the package carries the daemon, the PAM module and both models, so
-there is nothing to download and nothing to build:
+From PyPI. `pipx` keeps the daemon in its own environment and puts
+`glancectl` on your PATH:
 
 ```bash
-yay -S glanced
+pipx install 'glanced[runtime]'
+glancectl fetch-model                # ~3MB landmarker + ~13MB ArcFace
+glancectl install-service            # writes the user unit, enables it
 omarchy plugin add https://github.com/ayandexyz/omarchy-glance.git --enable
 ```
+
+`install-service` writes the same unit `packaging/install.sh` does, pointed at
+the `glancectl` that is running it, so it works from pipx, a venv or a
+checkout. `glancectl install-service --remove` takes it back out.
+
+An AUR package is written and waiting in `packaging/aur/` — the PKGBUILD and
+the release runbook — for when there is an account to publish it from. It
+carries the daemon, the PAM module and both models, so it will be one command
+and no download.
 
 Then click the bar icon and take the one button it offers, three times: **Start
 daemon**, **Enroll** (the guided sweep opens in a window), **Wire lock screen**
@@ -85,6 +95,8 @@ unattended pacman transaction editing files that belong to hyprland and
 omarchy.
 
 ## Setup from source
+
+For hacking on it, or to run the tests:
 
 ```bash
 python -m venv .venv && .venv/bin/pip install -e '.[runtime,gui,dev]'

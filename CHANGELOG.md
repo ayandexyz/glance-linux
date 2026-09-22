@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- **`glancectl install-service`.** Writes and enables the `glanced` user
+  unit without a source checkout, so a `pipx install glanced` is a working
+  service and not just a binary. It generates the same unit
+  `packaging/install.sh` installs — a test holds the two together — pointed
+  at the absolute path of the `glancectl` running it, resolved through
+  symlinks so a pipx upgrade cannot leave `ExecStart` dangling.
+  `--remove` takes it back out, `--no-enable` writes the unit only.
+
 ## 0.3.0 — 2026-09-22
 
 ### Added
