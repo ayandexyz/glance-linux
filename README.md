@@ -63,20 +63,15 @@ the shell's own lock have, but one you should read before relying on it.
 
 ## Install
 
-From a checkout of the latest release:
+From PyPI. `pipx` keeps the daemon in its own environment and puts
+`glancectl` on your PATH:
 
 ```bash
-git clone --branch v0.3.0 https://github.com/ayandexyz/glance-linux.git
-cd glance-linux
-python -m venv .venv && .venv/bin/pip install -e '.[runtime]'
-.venv/bin/glancectl fetch-model      # ~3MB landmarker + ~13MB ArcFace
-.venv/bin/glancectl install-service  # writes the user unit, enables it
+pipx install 'glanced[runtime]'
+glancectl fetch-model                # ~3MB landmarker + ~13MB ArcFace
+glancectl install-service            # writes the user unit, enables it
 omarchy plugin add https://github.com/ayandexyz/omarchy-glance.git --enable
 ```
-
-Once the package is on PyPI the first three lines collapse into
-`pipx install 'glanced[runtime]'`, which is what `install-service` was
-written for — it does not need the repository.
 
 `install-service` writes the same unit `packaging/install.sh` does, pointed at
 the `glancectl` that is running it, so it works from pipx, a venv or a
