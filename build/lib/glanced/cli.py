@@ -1,5 +1,6 @@
 """glancectl — the one command for everything that is not the daemon loop.
 
+    setup         service, PAM and the lock indicator in one go
     fetch-model   download the landmarker and ArcFace networks
     install-service  write and enable the glanced user service
     enroll        capture a face into the encrypted store
@@ -23,6 +24,7 @@ import argparse
 import getpass
 import json
 import logging
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -415,6 +417,42 @@ def _install_service(args: argparse.Namespace) -> int:
         return 1
 
 
+def _setup(args: argparse.Namespace) -> int:
+    """install-service, setup-pam and setup-lock, in that order.
+
+    Three commands that each ask for a password, run back to back so sudo is
+    asked once and the machine is ready in one go. Enrolling is deliberately
+    not here: it needs a face in front of the camera and a passphrase the user
+    chooses, which is a conversation, not a step.
+    """
+    from . import servicesetup
+
+    print("== daemon ==")
+    result = servicesetup.setup(mode=args.mode)
+    if result != 0:
+        return result
+
+    if not args.no_pam:
+        print("\n== lock screen ==")
+        if _setup_pam(argparse.Namespace(hands_free=False, remove=False)) != 0:
+            print("setup: the lock screen is not wired; the daemon is still running",
+                  file=sys.stderr)
+            return 1
+
+    if not args.no_lock:
+        print("\n== lock indicator ==")
+        # Cosmetic, and it does not exist outside Omarchy: a failure here is
+        # reported and does not fail the setup.
+        if _setup_lock(argparse.Namespace(remove=False)) != 0:
+            print("setup: the indicator was not applied; everything else is set up",
+                  file=sys.stderr)
+
+    print("\nNext: enroll your face, then restart the shell to load the indicator:")
+    print(f"  glancectl enroll --name {os.environ.get('USER', '$USER')} --remember")
+    print("  omarchy-restart-shell")
+    return 0
+
+
 def _selftest(args: argparse.Namespace) -> int:
     sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tests"))
     try:
@@ -615,6 +653,18 @@ def main(argv: list[str] | None = None) -> int:
     )
     setup_lock.add_argument("--remove", action="store_true", help="restore the stock lock screen files")
     setup_lock.set_defaults(func=_setup_lock)
+
+    setup_all = subparsers.add_parser(
+        "setup",
+        help="the whole machine setup: service, PAM and the lock indicator",
+    )
+    setup_all.add_argument("--mode", default="light", choices=["light", "heavy"],
+                           help="liveness mode the service runs the daemon in")
+    setup_all.add_argument("--no-pam", action="store_true",
+                           help="skip wiring the lock screen")
+    setup_all.add_argument("--no-lock", action="store_true",
+                           help="skip the lock screen indicator")
+    setup_all.set_defaults(func=_setup)
 
     install_service = subparsers.add_parser(
         "install-service",

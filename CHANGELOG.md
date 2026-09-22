@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.3.3 — 2026-09-23
+
+### Added
+- **`glancectl setup`.** The service, the PAM wiring and the lock indicator in
+  one command, behind a single password prompt. Enrolling stays separate: it
+  needs a face in front of the camera and a passphrase you choose.
+- The PAM module's source and the lock-screen patch ship inside the package,
+  so `setup-pam` and `setup-lock` work from a `pip install` instead of only
+  from a checkout or the AUR package. They were the two steps a PyPI install
+  could not complete, and both failed by opening a terminal that closed again
+  before anyone could read why. A test holds the packaged copies byte-identical
+  to the canonical ones at the repository root.
+
+### Fixed
+- `setup-pam` says what to install when there is no compiler, rather than
+  failing with a make traceback.
+
 ## 0.3.2 — 2026-09-22
 
 ### Added

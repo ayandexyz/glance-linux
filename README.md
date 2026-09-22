@@ -68,9 +68,15 @@ From PyPI. `pipx` keeps the daemon in its own environment and puts
 
 ```bash
 pipx install 'glanced[runtime,gui]'
-glancectl install-service            # ~16MB of models, the user unit, started
+glancectl setup                      # models, service, PAM, lock indicator
 omarchy plugin add https://github.com/ayandexyz/omarchy-glance.git --enable
 ```
+
+Then click the bar icon and **Enroll**, and `omarchy-restart-shell` to load the
+indicator. `setup` asks for your password once and does what `install-service`,
+`setup-pam` and `setup-lock` do separately; run those instead if you want to
+watch each one. Enrolling is not part of it: it needs your face in front of the
+camera and a passphrase you choose.
 
 The `gui` extra is PySide6, for the enrollment window: a camera preview that
 guides the sweep. Leave it out and nothing breaks -- `glancectl status`

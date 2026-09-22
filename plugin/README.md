@@ -101,17 +101,23 @@ you, and prints the command under every button so you can see what that is.
 
 ```bash
 pipx install 'glanced[runtime,gui]'
-glancectl install-service
+glancectl setup
 omarchy plugin add https://github.com/ayandexyz/omarchy-glance.git --enable
 ```
 
-`install-service` fetches the models and writes the user unit, so the daemon
-is running before the plugin ever looks for it. The `gui` extra is PySide6, which the
-**Enroll** button uses for the passphrase window and the guided sweep. Without
-it the button falls back to enrolling in a terminal, so it still works. Set **glancectl path** in the
-widget's settings to the binary pipx installed, spelled out in full:
-`~/.local/share/pipx/venvs/glanced/bin/glancectl` with `~` expanded — the
-check refuses symlinks, so not the `~/.local/bin/glancectl` link.
+`setup` fetches the models, writes the user unit, wires the lock screen and
+applies the indicator, behind one password prompt, so the daemon is running
+and wired before the plugin ever looks for it. The panel's buttons do the same
+steps one at a time if you would rather watch them.
+
+The `gui` extra is PySide6, which the **Enroll** button uses for the passphrase
+window and the guided sweep. Without it the button enrolls in a terminal
+instead, so it still works.
+
+There is nothing to configure: the plugin looks for `glancectl` where the
+package puts it and then where pipx does. **glancectl path** in the settings is
+for a source checkout — give the venv binary in full, since the check refuses
+symlinks and so cannot take the `~/.local/bin` one.
 
 Then click the bar icon and follow it. The panel asks for one thing at a time
 and gives you a button for each:

@@ -105,15 +105,42 @@ def _write(path: Path, content: str, log) -> None:
     log(f"  wrote:  {path}")
 
 
+def _installed_pam_dir() -> Optional[Path]:
+    """The module's source inside the package, which is all a pip install has."""
+    candidate = Path(__file__).resolve().parent / "_data" / "pam"
+    return candidate if (candidate / "pam_glance.c").exists() else None
+
+
+def source_dir(repo_pam_dir: Optional[Path] = None) -> Optional[Path]:
+    """Where pam_glance.c is: a checkout being edited, else the packaged copy."""
+    if repo_pam_dir is not None and (repo_pam_dir / "pam_glance.c").exists():
+        return repo_pam_dir
+    return _installed_pam_dir()
+
+
 def _ensure_module(repo_pam_dir: Optional[Path], log) -> bool:
     if MODULE.exists():
         return True
-    if repo_pam_dir is None or not (repo_pam_dir / "pam_glance.c").exists():
-        log(f"{MODULE} is missing and no source checkout to build it from (see pam/README.md)")
+
+    source = source_dir(repo_pam_dir)
+    if source is None:
+        log(f"{MODULE} is missing and there is no pam_glance.c to build it from")
         return False
+
+    # The module is C, so a wheel can ship the source but not the object. A
+    # machine without a compiler gets told what to install rather than a make
+    # traceback.
+    if shutil.which("make") is None or shutil.which("cc") is None:
+        log(f"{MODULE} is missing and building it needs a compiler: install base-devel")
+        return False
+
     log("building pam_glance.so ...")
-    subprocess.run(["make", "-C", str(repo_pam_dir)], check=True)
-    _sudo("make", "-C", str(repo_pam_dir), "install")
+    try:
+        subprocess.run(["make", "-C", str(source)], check=True)
+    except subprocess.CalledProcessError:
+        log("could not build pam_glance.so; the PAM headers come with the 'pam' package")
+        return False
+    _sudo("make", "-C", str(source), "install")
     return MODULE.exists()
 
 

@@ -1,0 +1,167 @@
+# Face ID-style indicator for the Omarchy lock screen
+
+A pill that drops from the top of the lock screen while a face PAM module is
+scanning. It springs open on the Omarchy mark, morphs into **a live view of
+the camera** inside a sweeping ring, and closes into a tick on success. There
+is no text anywhere in it: the mark says whose lock screen this is, the ring
+says it is looking, the tick says it worked.
+
+The motion is Glance's, ported from `NotchOverlay/NotchOverlayView.swift` in
+the macOS app.
+
+This is a patch to Omarchy's own lock plugin (`shell/plugins/lock/`), because
+nothing outside the session-lock surface can draw over it. It is the shape of
+an upstream change, previewed locally. An Omarchy update overwrites it —
+which is why `glancectl setup-lock` is the way to apply it rather than
+`apply.sh` by hand: it also installs a `post-update` hook
+(`packaging/hooks/repair-glance-lock.hook`) that puts the patch back at the
+end of `omarchy update`, from the root-owned copy the `glanced` package
+installs under `/usr/share/glanced/lock-faceid/`. From a source checkout the
+hook only notifies; the daemon's status (and the bar panel) shows whether the
+patch is currently applied either way. `glancectl setup-lock --remove` runs
+`revert.sh` and drops the hook.
+
+## How it knows a scan is happening
+
+`pam_glance` sends a PAM info message (`Glance: look at the camera`) before it
+opens the camera. The lock's password `PamContext` already receives every
+message; the patch watches for that prefix:
+
+| PAM event | indicator |
+|---|---|
+| info message starting `Glance:` | `scanning` — pill drops in, opens on the mark, then the ring and the camera |
+| conversation completes with success while scanning | `success` — ring closes, tick pops, unlock 550 ms later. A success that arrives under 1.4 s into the scan waits for the pill to finish arriving first, so a fast scan is not a flash |
+| PAM moves on to the password prompt | `failure` — red ring, shake, hides after 1.2 s; password checked as usual |
+
+No polling, no socket, and any module that announces itself the same way
+(howdy could) gets the indicator for free.
+
+## The motion, and why it is copied exactly
+
+Two things carry over from upstream, and both are about the *choreography*
+rather than the drawing:
+
+**The slide and the expansion are separate timelines.** Coming in, the pill
+slides down first and its size follows 160 ms later; going out it contracts
+first and leaves 180 ms later. Moving both together reads as a box changing
+size. Staggering them reads as an object arriving. Upstream hit the same wall
+in SwiftUI and solved it the same way, with two independently mutated state
+mirrors rather than one animated transition.
+
+**The springs are asymmetric.** A little overshoot opening (upstream's
+`spring(response: 0.45, damping: 0.7)`), none closing (`damping: 1.0`).
+Arriving feels eager, leaving feels deliberate.
+
+The mark is a square, so every footprint is a rounded square: the contracted
+bar, the open panel, the camera view and the progress outline share one corner
+treatment, stepped down by each inset so the radii stay concentric. The shape
+never changes as the pill grows — only its size does.
+
+The verdict is the one exception. As the sweep closes, the pill and the
+outline round together into a full circle around the tick or the cross: the
+square was the frame for a face, the circle is a badge. The mark and the
+camera view, which only ever show while it is looking, stay square.
+
+## The Omarchy mark
+
+The square logo mark, taken from `icon.png`, which Omarchy already ships at
+`$OMARCHY_PATH` — so there is nothing to download and it works offline.
+
+The shipped file is one flat colour on transparent, and no hue-based tint can
+move a flat colour anywhere. It is coloured instead by masking a rectangle of
+the current theme's own foreground with the mark's alpha, which means it
+follows a theme change with no per-theme asset. The brand page's pre-coloured
+variants (`omarchy-logo-rose-pine.svg` and friends) are pinned to one palette
+and would not do that.
+
+It holds the pill for 750 ms, counted from the moment the pill starts to open
+rather than from the start of the scan — long enough to register once it has
+actually arrived, short enough that it is never standing between the user and
+their session — and the camera polling runs underneath it, so a frame is ready
+the instant the ring appears.
+
+## The live view
+
+The lock screen cannot capture it: the daemon holds the camera for the whole
+scan, and V4L2 will not give a second process a stream. So the daemon
+publishes each frame instead, and the indicator polls it at 15fps.
+
+The published frame is a 192px square crop that follows the face box,
+mirrored (an unmirrored preview of your own face moves the wrong way when you
+lean), JPEG quality 70, about 5KB. It is written to
+`$XDG_RUNTIME_DIR/glance/preview.jpg`, which means:
+
+- on tmpfs, so no frame ever reaches the disk;
+- mode 0600 inside a 0700 directory, so no other user can read it;
+- replaced atomically, so the indicator never renders half a frame;
+- deleted when the scan ends, and again when the daemon starts, so a crash
+  cannot leave a picture of your face behind.
+
+Two images alternate in the indicator, and the newly loaded one is only shown
+once it has decoded, so the view never blinks between frames. Until the first
+frame lands — and if the daemon is not running, or previews are off — the face
+glyph stands in, so the indicator never depends on the preview existing.
+
+Turn it off entirely with `glancectl daemon --no-preview` (edit the
+`ExecStart=` line in `~/.config/systemd/user/glanced.service`). The indicator
+then simply keeps the glyph.
+
+## The unlock afterglow
+
+The lock surface is destroyed the instant the session unlocks, so a check mark
+drawn on it disappears at exactly the moment it is doing its job, and the
+unlock ends on a blink. The patch carries the capsule across that boundary
+with a second, click-through layer-shell window that outlives the lock:
+
+| | |
+|---|---|
+| PAM returns success | ring closes, check mark pops on the lock surface; the afterglow window is raised *behind* it |
+| after 550 ms | the lock drops, revealing the afterglow already painted and in place |
+| held 900 ms | the same capsule, in the same pixel position, now on the desktop |
+| 420 ms | slides up and fades, window destroyed |
+
+The window is raised at the verdict rather than at the unlock because a
+layer-shell window is not on screen when it is asked for: it has to be
+created, configured and painted, which measured 60-230 ms on this machine,
+while the lock surface is destroyed in the same turn as the request. Raising
+it at the unlock leaves a stretch with neither on screen, and the capsule
+visibly vanishes and pops back. A session lock surface renders above every
+layer-shell layer, so a window raised early is simply invisible until the lock
+drops and reveals it.
+
+The session comes back sooner than it did before this (550 ms rather than
+800 ms), because the confirmation no longer has to finish before the unlock —
+the rest of it happens on the far side, where it costs the user nothing.
+
+The afterglow copy takes no keyboard focus and has an empty input region, so
+every click passes straight through it. It is drawn with the notification
+colours rather than the lock ones: `lock.*` is translucent by design, tuned to
+sit on a blurred wallpaper, and over the desktop that leaves terminal text
+legible through the words.
+
+On a multi-monitor setup the afterglow appears on one screen while the lock
+covers all of them, the same way the existing lock preview window behaves.
+
+## Apply / revert
+
+```bash
+sudo patches/omarchy-lock-faceid/apply.sh    # backs up *.orig
+omarchy-restart-shell
+sudo patches/omarchy-lock-faceid/revert.sh
+omarchy-restart-shell
+```
+
+## Preview without locking
+
+```bash
+omarchy-shell lock previewFace scanning
+omarchy-shell lock previewFace success
+omarchy-shell lock previewFace failure
+omarchy-shell lock hidePreview
+```
+
+## Files
+
+- `FaceUnlockIndicator.qml` — the capsule; self-contained, themed from `Color.lock`
+- `LockView.qml`, `Service.qml` — the installed 4.0.3 files plus the wiring
+- `lockview.diff`, `service.diff` — the wiring alone, for the upstream PR

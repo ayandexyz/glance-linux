@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "glanced"
-version = "0.3.2"
+version = "0.3.3"
 description = "Face unlock for Linux with real liveness detection"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -32,6 +32,13 @@ glancectl = "glanced.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+# The PAM module's source and the lock-screen patch. They are data, not code,
+# but `setup-pam` and `setup-lock` cannot work without them, and a wheel that
+# leaves them out is a face unlock that stops at the lock screen. Kept in step
+# with the canonical top-level copies by tests/test_packaged_data.py.
+[tool.setuptools.package-data]
+glanced = ["_data/pam/*", "_data/lock-faceid/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

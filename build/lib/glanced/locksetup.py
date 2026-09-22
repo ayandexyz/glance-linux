@@ -59,11 +59,24 @@ def _repo_patch_dir() -> Optional[Path]:
     return candidate if (candidate / "apply.sh").exists() else None
 
 
+def _installed_patch_dir() -> Optional[Path]:
+    """The copy inside the package, which is all a pip install has."""
+    candidate = Path(__file__).resolve().parent / "_data" / "lock-faceid"
+    return candidate if (candidate / "apply.sh").exists() else None
+
+
 def patch_dir() -> Optional[Path]:
-    """Where `apply.sh` lives: the package's copy first, then a checkout."""
+    """Where `apply.sh` lives.
+
+    The distribution package's copy first, because it is root-owned and is
+    what the post-update hook is allowed to run; then a source checkout, so a
+    developer patches what they are editing; then the copy inside the wheel,
+    which is what a `pip install` has and the reason this is not simply the
+    first two.
+    """
     if (PACKAGED_PATCH_DIR / "apply.sh").exists():
         return PACKAGED_PATCH_DIR
-    return _repo_patch_dir()
+    return _repo_patch_dir() or _installed_patch_dir()
 
 
 def _patched(service: Path) -> bool:
