@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 — 2026-09-22
 
 ### Added
 - **Attention mode.** A third socket, `attention.sock`, streams head pose
@@ -11,7 +11,7 @@
   subscribed and is handed over to an unlock scan on request, so an auth
   request always has priority. `glancectl attention` prints the stream;
   `glancectl daemon --no-attention` turns the socket off. This is what
-  `omarchy-shy` (a blur shield without screen capture) subscribes to.
+  `omarchy-attention` (a blur shield without screen capture) subscribes to.
 - `Camera.frames(min_interval)` drops frames without decoding them, which is
   how attention runs the landmarker at 8 fps on a 30 fps camera.
 
