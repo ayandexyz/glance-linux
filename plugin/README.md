@@ -100,14 +100,22 @@ you, and prints the command under every button so you can see what that is.
 ## Install
 
 ```bash
-yay -S glanced
+pipx install 'glanced[runtime]'
+glancectl install-service
 omarchy plugin add https://github.com/ayandexyz/omarchy-glance.git --enable
 ```
+
+`install-service` fetches the models and writes the user unit, so the daemon
+is running before the plugin ever looks for it. Set **glancectl path** in the
+widget's settings to the binary pipx installed, spelled out in full:
+`~/.local/share/pipx/venvs/glanced/bin/glancectl` with `~` expanded — the
+check refuses symlinks, so not the `~/.local/bin/glancectl` link.
 
 Then click the bar icon and follow it. The panel asks for one thing at a time
 and gives you a button for each:
 
-1. **Start daemon** — `systemctl --user enable --now glanced`
+1. **Start daemon** — `systemctl --user enable --now glanced`, already done
+   for you by `install-service`
 2. **Enroll** — asks you to choose a passphrase (it encrypts your face data
    at rest), then opens the guided sweep in a window; look around as it asks
 3. **Wire lock screen** — opens a terminal for `glancectl setup-pam`, which
@@ -142,8 +150,9 @@ omarchy plugin remove io.github.ayandexyz.glance
 That takes the widget off the bar and deletes the plugin directory. It leaves
 the daemon alone: nothing about your enrollment, your PAM stack, or the
 `glanced` service belongs to this plugin. To undo those, run
-`glancectl setup-pam --remove`, `glancectl setup-lock --remove` and
-`yay -R glanced` (or `packaging/install.sh --uninstall` from a checkout).
+`glancectl setup-pam --remove`, `glancectl install-service --remove` and
+`pipx uninstall glanced` (or `packaging/install.sh --uninstall` from a
+checkout).
 
 ## Settings
 
