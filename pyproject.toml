@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "glanced"
-version = "0.3.3"
+version = "0.3.4"
 description = "Face unlock for Linux with real liveness detection"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -38,7 +38,7 @@ where = ["src"]
 # leaves them out is a face unlock that stops at the lock screen. Kept in step
 # with the canonical top-level copies by tests/test_packaged_data.py.
 [tool.setuptools.package-data]
-glanced = ["_data/pam/*", "_data/lock-faceid/*"]
+glanced = ["_data/pam/*", "_data/lock-faceid/*", "_data/hooks/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

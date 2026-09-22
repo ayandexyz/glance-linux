@@ -23,6 +23,12 @@ PAIRS += [
     for source in sorted((ROOT / "patches" / "omarchy-lock-faceid").iterdir())
     if source.is_file()
 ]
+PAIRS += [
+    (
+        ROOT / "packaging" / "hooks" / "repair-glance-lock.hook",
+        PACKAGED / "hooks" / "repair-glance-lock.hook",
+    )
+]
 
 
 @pytest.mark.parametrize("canonical,packaged", PAIRS, ids=lambda p: p.name)
@@ -78,3 +84,21 @@ def test_the_distribution_package_still_wins(monkeypatch, tmp_path):
     (packaged / "apply.sh").write_text("#!/bin/sh\n")
     monkeypatch.setattr(locksetup, "PACKAGED_PATCH_DIR", packaged)
     assert locksetup.patch_dir() == packaged
+
+
+def test_the_repair_hook_ships_in_the_package():
+    """Applied and then reverted by the next `omarchy update` is worse than
+    never applied: this file is what puts the indicator back, and a wheel
+    without it leaves a pip install with nothing to install."""
+    packaged = PACKAGED / "hooks" / "repair-glance-lock.hook"
+    assert packaged.exists()
+    assert packaged.read_text().startswith("#!")
+
+
+def test_hook_source_prefers_the_distribution_package(monkeypatch, tmp_path):
+    from glanced import locksetup
+
+    packaged = tmp_path / "repair-glance-lock.hook"
+    packaged.write_text("#!/bin/bash\n")
+    monkeypatch.setattr(locksetup, "PACKAGED_HOOK", packaged)
+    assert locksetup._hook_source() == packaged

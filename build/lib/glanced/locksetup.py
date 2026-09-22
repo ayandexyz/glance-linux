@@ -104,10 +104,19 @@ def _sudo(*command: str) -> None:
 
 
 def _hook_source() -> Optional[Path]:
+    """The hook file: the distribution package, a checkout, then the wheel's copy.
+
+    Without the last one a pip install applies the indicator and then has
+    nothing to repair it, so the next `omarchy update` quietly takes it away
+    again.
+    """
     if PACKAGED_HOOK.exists():
         return PACKAGED_HOOK
     checkout = Path(__file__).resolve().parents[2] / "packaging" / "hooks" / HOOK_NAME
-    return checkout if checkout.exists() else None
+    if checkout.exists():
+        return checkout
+    installed = Path(__file__).resolve().parent / "_data" / "hooks" / HOOK_NAME
+    return installed if installed.exists() else None
 
 
 def _install_hook(log) -> None:
