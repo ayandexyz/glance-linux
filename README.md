@@ -68,14 +68,14 @@ From PyPI. `pipx` keeps the daemon in its own environment and puts
 
 ```bash
 pipx install 'glanced[runtime]'
-glancectl fetch-model                # ~3MB landmarker + ~13MB ArcFace
-glancectl install-service            # writes the user unit, enables it
+glancectl install-service            # ~16MB of models, the user unit, started
 omarchy plugin add https://github.com/ayandexyz/omarchy-glance.git --enable
 ```
 
-`install-service` writes the same unit `packaging/install.sh` does, pointed at
-the `glancectl` that is running it, so it works from pipx, a venv or a
-checkout. `glancectl install-service --remove` takes it back out.
+`install-service` fetches the models if they are missing and writes the same
+unit `packaging/install.sh` does, pointed at the `glancectl` that is running
+it, so it works from pipx, a venv or a checkout. `--no-fetch` skips the
+download; `--remove` takes the whole thing back out.
 
 An AUR package is written and waiting in `packaging/aur/` — the PKGBUILD and
 the release runbook — for when there is an account to publish it from. It
