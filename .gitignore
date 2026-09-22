@@ -8,3 +8,6 @@ models/
 *.so
 *.egg-info/
 reference/
+
+# Build artifacts from `python -m build`.
+dist/
