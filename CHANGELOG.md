@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.1 — 2026-09-22
 
 ### Added
 - **`glancectl install-service`.** Writes and enables the `glanced` user
@@ -10,6 +10,10 @@
   at the absolute path of the `glancectl` running it, resolved through
   symlinks so a pipx upgrade cannot leave `ExecStart` dangling.
   `--remove` takes it back out, `--no-enable` writes the unit only.
+  It also fetches the models first if they are missing, so installing
+  the daemon is `pipx install` and this, rather than a third step
+  whose absence only shows up later in the journal. `--no-fetch`
+  skips that.
 
 ## 0.3.0 — 2026-09-22
 

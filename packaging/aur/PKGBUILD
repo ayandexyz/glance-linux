@@ -1,7 +1,7 @@
 # Maintainer: Ayan De <deayan252@gmail.com>
 
 pkgname=glanced
-pkgver=0.3.0
+pkgver=0.3.1
 pkgrel=1
 pkgdesc="Face unlock for Linux with real liveness detection"
 arch=('x86_64')

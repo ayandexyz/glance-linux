@@ -14,6 +14,16 @@ ROOT = Path(__file__).resolve().parent.parent
 PACKAGED_UNIT = ROOT / "packaging" / "systemd" / "glanced.service"
 
 
+@pytest.fixture(autouse=True)
+def models_on_disk(monkeypatch):
+    """Default to "models already here" so only the fetch tests exercise it.
+
+    Without this, whether a test downloads 16MB depends on whether the
+    checkout happens to have models/ populated.
+    """
+    monkeypatch.setattr(servicesetup, "models_present", lambda: True)
+
+
 @pytest.fixture
 def systemctl(monkeypatch):
     calls: list[list[str]] = []
@@ -93,6 +103,54 @@ def test_remove_is_quiet_when_nothing_is_installed(tmp_path, monkeypatch, system
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
     assert servicesetup.setup(remove=True) == 0
     assert systemctl == []
+
+
+def test_setup_fetches_the_models_when_they_are_missing(tmp_path, monkeypatch, systemctl):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    binary = tmp_path / "glancectl"
+    binary.write_text("#!/bin/sh\n")
+    monkeypatch.setattr(servicesetup, "glancectl_path", lambda: binary)
+    monkeypatch.setattr(servicesetup, "models_present", lambda: False)
+
+    fetched: list[bool] = []
+    from glanced import models
+
+    monkeypatch.setattr(models, "fetch", lambda *a, **k: fetched.append(True))
+
+    assert servicesetup.setup(enable=False) == 0
+    assert fetched == [True], "a service that starts without models only fails later"
+
+
+def test_setup_leaves_existing_models_alone(tmp_path, monkeypatch, systemctl):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    binary = tmp_path / "glancectl"
+    binary.write_text("#!/bin/sh\n")
+    monkeypatch.setattr(servicesetup, "glancectl_path", lambda: binary)
+    monkeypatch.setattr(servicesetup, "models_present", lambda: True)
+
+    from glanced import models
+
+    def boom(*a, **k):
+        raise AssertionError("must not re-download models that are already here")
+
+    monkeypatch.setattr(models, "fetch", boom)
+    assert servicesetup.setup(enable=False) == 0
+
+
+def test_no_fetch_skips_the_download(tmp_path, monkeypatch, systemctl):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    binary = tmp_path / "glancectl"
+    binary.write_text("#!/bin/sh\n")
+    monkeypatch.setattr(servicesetup, "glancectl_path", lambda: binary)
+    monkeypatch.setattr(servicesetup, "models_present", lambda: False)
+
+    from glanced import models
+
+    def boom(*a, **k):
+        raise AssertionError("--no-fetch must not download anything")
+
+    monkeypatch.setattr(models, "fetch", boom)
+    assert servicesetup.setup(enable=False, fetch=False) == 0
 
 
 def test_missing_binary_is_an_error(tmp_path, monkeypatch, systemctl, capsys):
