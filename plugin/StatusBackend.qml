@@ -73,10 +73,26 @@ Item {
 
   readonly property int refreshIntervalSec: Math.round(GlanceLogic.clamp(
     setting("refreshIntervalSec", 30), 5, 600))
-  // The configured path wins; otherwise the one the glanced package installs.
-  // There is deliberately no search: not PATH, not a guess under $HOME.
+  // The configured path wins; otherwise the known install locations are tried
+  // in order, the package's first and the pipx venv's second. There is still
+  // no search: the list is fixed and each entry must pass the same ownership
+  // rules before anything runs through it.
   readonly property string configuredPath: String(setting("glancectlPath", "")).trim()
-  readonly property string binaryPath: configuredPath !== "" ? configuredPath : GlanceLogic.DEFAULT_GLANCECTL
+  readonly property var defaultCandidates: GlanceLogic.defaultGlancectlCandidates(Quickshell.env("HOME"))
+  // Which default is being checked. Only ever advances past one that was
+  // refused, and resets once every default has been.
+  property int candidateIndex: 0
+  readonly property string binaryPath: configuredPath !== ""
+    ? configuredPath
+    : defaultCandidates[Math.min(candidateIndex, defaultCandidates.length - 1)]
+  // Reasons the earlier defaults gave, so a refusal names every path tried
+  // rather than only the last.
+  property var candidateProblems: []
+
+  onConfiguredPathChanged: {
+    root.candidateIndex = 0
+    root.candidateProblems = []
+  }
   readonly property var childEnvironment: GlanceLogic.childEnvironment()
 
   readonly property string userName: Quickshell.env("USER") || "$USER"
@@ -157,12 +173,24 @@ Item {
       verdict = GlanceLogic.checkBinary(binaryPath, checkProcess.body, binaryIdentity)
     }
     if (!verdict.ok) {
-      refuseBinary(verdict.reason)
+      // A default that is not there is not a failure while another default is
+      // still untried: a pipx install has no /usr/bin/glancectl, and a package
+      // install has no pipx venv.
+      if (configuredPath === "" && candidateIndex < defaultCandidates.length - 1) {
+        root.candidateProblems = candidateProblems.concat([verdict.reason])
+        root.candidateIndex = candidateIndex + 1
+        Qt.callLater(function() { root.checkBinary() })
+        return
+      }
+      refuseBinary(candidateProblems.concat([verdict.reason]).join("; "))
+      root.candidateIndex = 0
+      root.candidateProblems = []
       return
     }
     binaryOk = true
     binaryMissing = false
     binaryProblem = ""
+    root.candidateProblems = []
     var replaced = verdict.changed
     binaryIdentity = verdict.identity
     if (replaced) {

@@ -9,6 +9,10 @@
 // or `glancectl` earlier on an inherited PATH would otherwise run in place of
 // the real one, on the way to the interactive PAM setup step.
 var DEFAULT_GLANCECTL = "/usr/bin/glancectl"
+// Where `pipx install glanced` puts the binary. pipx also drops a symlink in
+// ~/.local/bin, which the ownership rules refuse, so the venv file itself is
+// the only usable one.
+var PIPX_GLANCECTL_SUFFIX = "/.local/share/pipx/venvs/glanced/bin/glancectl"
 var SYSTEMCTL = "/usr/bin/systemctl"
 var SETSID = "/usr/bin/setsid"
 var LAUNCH_TERMINAL = "/usr/bin/omarchy-launch-terminal"
@@ -368,6 +372,25 @@ function parseActionResult(stdout, stderr, exitCode) {
 // entry point and PYTHONPATH or LD_PRELOAD would let a user-writable file run
 // inside it. The rest of the session environment stays: the terminal launcher
 // and the enrollment window need the Wayland and D-Bus variables.
+// The places an installed glancectl actually is, tried in order when the
+// setting is empty: the distribution package first, then the pipx venv. This
+// is a fixed list of two known install locations, not a search -- no PATH
+// lookup, no globbing, nothing walking $HOME -- and each one still has to pass
+// the ownership rules before anything runs through it. Without the second, a
+// `pipx install glanced` leaves every button in the panel broken until the
+// user finds the setting, which is the common install now that there is no
+// AUR package.
+function defaultGlancectlCandidates(home) {
+  var candidates = [DEFAULT_GLANCECTL]
+  var base = String(home === undefined || home === null ? "" : home).trim()
+  // An empty or relative HOME would make a path the verifier refuses anyway;
+  // leaving it out keeps the refusal about the package path the user can see.
+  if (base.charAt(0) === "/") {
+    candidates.push(base.replace(/\/+$/, "") + PIPX_GLANCECTL_SUFFIX)
+  }
+  return candidates
+}
+
 function childEnvironment() {
   return {
     PATH: SAFE_PATH,

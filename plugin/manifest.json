@@ -42,7 +42,7 @@
         "type": "string",
         "label": "glancectl path",
         "defaultValue": "",
-        "description": "Optional. Absolute path to glancectl; empty means /usr/bin/glancectl from the glanced package. It is checked before every run: no symlinks, every directory and the file owned by you or root and writable by nobody else, the file regular and executable, and the same file (device, inode, size, mtime) the previous run was checked against. It is then executed as the object that check accepted — opened once and exec\u0027d as that descriptor — not by resolving the path again. For a source checkout give the venv binary in full, e.g. /home/you/glance-linux/.venv/bin/glancectl."
+        "description": "Optional. Absolute path to glancectl; empty tries /usr/bin/glancectl from the glanced package, then ~/.local/share/pipx/venvs/glanced/bin/glancectl from `pipx install glanced`. It is checked before every run: no symlinks, every directory and the file owned by you or root and writable by nobody else, the file regular and executable, and the same file (device, inode, size, mtime) the previous run was checked against. It is then executed as the object that check accepted — opened once and exec\u0027d as that descriptor — not by resolving the path again. For a source checkout give the venv binary in full, e.g. /home/you/glance-linux/.venv/bin/glancectl."
       }
     ]
   }

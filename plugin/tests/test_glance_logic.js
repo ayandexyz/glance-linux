@@ -9,7 +9,7 @@ const assert = require("assert")
 
 const source = fs.readFileSync(path.join(__dirname, "..", "GlanceLogic.js"), "utf8")
   .replace(/^\.pragma library\s*$/m, "")
-const G = vm.runInNewContext(source + "\n;({ parseStatus, stateLabel, nextStep, outcomeLabel, outcomeSeverity, missingModels, identityLine, elapsed, lastScanText, lastScanReason, parseActionResult, clamp, lockLabel, indicatorLabel, nextAction, launchCommand, pathSyntaxProblem, pathPrefixes, statCommand, checkBinary, appendCapped, childEnvironment, bounded, deadlineHit, sameIdentity, describeIdentity, verifiedCommand, identityToken, EXEC_VERIFIER, PYTHON3, SYSTEMCTL, SETSID, LAUNCH_TERMINAL, STAT, TIMEOUT, DEFAULT_GLANCECTL, SAFE_PATH, CHECK_DEADLINE_SEC, STATUS_DEADLINE_SEC, ACTION_DEADLINE_SEC, LAUNCH_DEADLINE_SEC, KILL_GRACE_SEC })")
+const G = vm.runInNewContext(source + "\n;({ parseStatus, stateLabel, nextStep, outcomeLabel, outcomeSeverity, missingModels, identityLine, elapsed, lastScanText, lastScanReason, parseActionResult, clamp, lockLabel, indicatorLabel, nextAction, launchCommand, pathSyntaxProblem, pathPrefixes, statCommand, checkBinary, appendCapped, childEnvironment, bounded, deadlineHit, sameIdentity, describeIdentity, verifiedCommand, identityToken, EXEC_VERIFIER, PYTHON3, SYSTEMCTL, SETSID, LAUNCH_TERMINAL, STAT, TIMEOUT, DEFAULT_GLANCECTL, defaultGlancectlCandidates, PIPX_GLANCECTL_SUFFIX, SAFE_PATH, CHECK_DEADLINE_SEC, STATUS_DEADLINE_SEC, ACTION_DEADLINE_SEC, LAUNCH_DEADLINE_SEC, KILL_GRACE_SEC })")
 // Objects built inside the vm have a foreign Object prototype, which trips
 // deepStrictEqual; compare by value instead.
 function assertSame(actual, expected, message) {
@@ -411,6 +411,34 @@ test("what runs is the checked object, not the pathname it had", () => {
   assert.strictEqual(G.verifiedCommand(["/usr/bin/glancectl"], null), null)
   assert.strictEqual(G.verifiedCommand([], ID), null)
   assert.strictEqual(G.identityToken(null), "")
+})
+
+test("default candidates try the package first, then the pipx venv", () => {
+  const got = G.defaultGlancectlCandidates("/home/ayan")
+  assert.deepStrictEqual(Array.from(got), [
+    "/usr/bin/glancectl",
+    "/home/ayan/.local/share/pipx/venvs/glanced/bin/glancectl",
+  ])
+})
+
+test("a trailing slash on HOME does not double up", () => {
+  const got = G.defaultGlancectlCandidates("/home/ayan///")
+  assert.strictEqual(got[1], "/home/ayan/.local/share/pipx/venvs/glanced/bin/glancectl")
+})
+
+test("an unusable HOME leaves only the package path", () => {
+  for (const home of ["", "   ", "relative/path", undefined, null]) {
+    const got = G.defaultGlancectlCandidates(home)
+    assert.deepStrictEqual(Array.from(got), ["/usr/bin/glancectl"],
+      "HOME " + JSON.stringify(home) + " must not produce a candidate")
+  }
+})
+
+test("every default candidate is a path the verifier will judge, not refuse on sight", () => {
+  for (const candidate of G.defaultGlancectlCandidates("/home/ayan")) {
+    assert.strictEqual(G.pathSyntaxProblem(candidate), "",
+      candidate + " must be syntactically acceptable")
+  }
 })
 
 let failed = 0
