@@ -63,18 +63,36 @@ the shell's own lock have, but one you should read before relying on it.
 
 ## Install
 
-From PyPI. `pipx` keeps the daemon in its own environment and puts
-`glancectl` on your PATH:
-
-`pipx` comes from `python-pipx` (`sudo pacman -S python-pipx`), and wiring the
-lock screen compiles a small PAM module, so `base-devel` and `pam` need to be
-there too -- `setup` says so if they are not.
+From PyPI, into a venv built from `packaging/glanced-0.3.4.lock`. That file
+pins every package in the dependency set -- all 28, `glanced` itself included
+-- to one exact version and one exact SHA-256, and pip runs in hash-checking
+mode over the whole of it, so a substituted artifact fails the install instead
+of silently replacing the code the daemon runs. Wiring the lock screen
+compiles a small PAM module, so `base-devel` and `pam` need to be there --
+`setup` says so if they are not.
 
 ```bash
-pipx install 'glanced[runtime,gui]'
-glancectl setup                      # models, service, PAM, lock indicator
+python -m venv ~/.local/share/glance
+~/.local/share/glance/bin/pip install --require-hashes -r packaging/glanced-0.3.4.lock
+~/.local/share/glance/bin/glancectl setup   # models, service, PAM, lock indicator
 omarchy plugin add https://github.com/ayandexyz/omarchy-glance.git --enable
 ```
+
+The lock is generated for CPython 3.14 on x86_64 Linux, which is what Omarchy
+ships; regenerate it for anything else, because the wheels and so the hashes
+differ:
+
+```bash
+python -m pip install --dry-run --ignore-installed \
+    --report report.json 'glanced[runtime,gui]==0.3.4'
+```
+
+`pipx install 'glanced[runtime,gui]'` is still a perfectly ordinary way to
+install this, and puts `glancectl` on your PATH. It resolves the dependency
+floors below to whatever is newest that day, though, so two people running the
+same command do not necessarily get the same code. The lock exists because the
+Omarchy plugin executes `glancectl` for privileged setup steps, and a
+reviewable install should be one that reproduces.
 
 Then click the bar icon and **Enroll**, and `omarchy-restart-shell` to load the
 indicator. `setup` asks for your password once and does what `install-service`,
@@ -97,13 +115,6 @@ An AUR package is written and waiting in `packaging/aur/` — the PKGBUILD and
 the release runbook — for when there is an account to publish it from. It
 carries the daemon, the PAM module and both models, so it will be one command
 and no download.
-
-Then click the bar icon and take the one button it offers, three times: **Start
-daemon**, **Enroll** (the guided sweep opens in a window), **Wire lock screen**
-(a terminal, for the one step that needs your password). A fourth, **Add lock
-indicator**, is optional: the Face ID-style capsule on the lock screen, kept
-in place across `omarchy update` by a hook. `packaging/aur/` holds
-the PKGBUILD and the release runbook.
 
 The package deliberately does not touch `/etc/pam.d` itself. Changing how the
 machine authenticates you belongs to a command you run and watch, not to an

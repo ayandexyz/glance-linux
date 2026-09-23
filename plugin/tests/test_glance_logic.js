@@ -413,17 +413,19 @@ test("what runs is the checked object, not the pathname it had", () => {
   assert.strictEqual(G.identityToken(null), "")
 })
 
-test("default candidates try the package first, then the pipx venv", () => {
+test("default candidates try the package, then the locked venv, then pipx", () => {
   const got = G.defaultGlancectlCandidates("/home/ayan")
   assert.deepStrictEqual(Array.from(got), [
     "/usr/bin/glancectl",
+    "/home/ayan/.local/share/glance/bin/glancectl",
     "/home/ayan/.local/share/pipx/venvs/glanced/bin/glancectl",
   ])
 })
 
 test("a trailing slash on HOME does not double up", () => {
   const got = G.defaultGlancectlCandidates("/home/ayan///")
-  assert.strictEqual(got[1], "/home/ayan/.local/share/pipx/venvs/glanced/bin/glancectl")
+  assert.strictEqual(got[1], "/home/ayan/.local/share/glance/bin/glancectl")
+  assert.strictEqual(got[2], "/home/ayan/.local/share/pipx/venvs/glanced/bin/glancectl")
 })
 
 test("an unusable HOME leaves only the package path", () => {

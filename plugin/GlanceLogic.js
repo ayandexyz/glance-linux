@@ -9,6 +9,10 @@
 // or `glancectl` earlier on an inherited PATH would otherwise run in place of
 // the real one, on the way to the interactive PAM setup step.
 var DEFAULT_GLANCECTL = "/usr/bin/glancectl"
+// Where the locked install in the README puts the binary: a plain venv built
+// from `glanced-0.3.4.lock`, every package in it pinned to one version and one
+// SHA-256. This is the documented install, so it is tried before pipx's.
+var LOCKED_GLANCECTL_SUFFIX = "/.local/share/glance/bin/glancectl"
 // Where `pipx install glanced` puts the binary. pipx also drops a symlink in
 // ~/.local/bin, which the ownership rules refuse, so the venv file itself is
 // the only usable one.
@@ -389,20 +393,23 @@ function parseActionResult(stdout, stderr, exitCode) {
 // inside it. The rest of the session environment stays: the terminal launcher
 // and the enrollment window need the Wayland and D-Bus variables.
 // The places an installed glancectl actually is, tried in order when the
-// setting is empty: the distribution package first, then the pipx venv. This
-// is a fixed list of two known install locations, not a search -- no PATH
+// setting is empty: the distribution package first, then the locked venv the
+// README builds, then the pipx venv. This is a fixed list of three known
+// install locations, not a search -- no PATH
 // lookup, no globbing, nothing walking $HOME -- and each one still has to pass
-// the ownership rules before anything runs through it. Without the second, a
-// `pipx install glanced` leaves every button in the panel broken until the
-// user finds the setting, which is the common install now that there is no
-// AUR package.
+// the ownership rules before anything runs through it. Without the last two,
+// an install into either venv leaves every button in the panel broken until
+// the user finds the setting, and a venv is how the daemon is installed while
+// there is no AUR package.
 function defaultGlancectlCandidates(home) {
   var candidates = [DEFAULT_GLANCECTL]
   var base = String(home === undefined || home === null ? "" : home).trim()
   // An empty or relative HOME would make a path the verifier refuses anyway;
   // leaving it out keeps the refusal about the package path the user can see.
   if (base.charAt(0) === "/") {
-    candidates.push(base.replace(/\/+$/, "") + PIPX_GLANCECTL_SUFFIX)
+    var home_ = base.replace(/\/+$/, "")
+    candidates.push(home_ + LOCKED_GLANCECTL_SUFFIX)
+    candidates.push(home_ + PIPX_GLANCECTL_SUFFIX)
   }
   return candidates
 }

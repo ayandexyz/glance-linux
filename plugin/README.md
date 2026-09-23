@@ -99,29 +99,56 @@ you, and prints the command under every button so you can see what that is.
 
 ## Install
 
-`pipx` comes from `python-pipx` (`sudo pacman -S python-pipx`), and wiring the
-lock screen compiles a small PAM module, so `base-devel` and `pam` need to be
-there too -- `setup` says so if they are not.
+Wiring the lock screen compiles a small PAM module, so `base-devel` and `pam`
+need to be there — `setup` says so if they are not.
+
+The daemon is installed from `glanced-0.3.4.lock` in this repository, which
+pins **every** package in the dependency set — all 28 of them, `glanced`
+itself included — to one exact version and one exact SHA-256. pip runs in
+hash-checking mode over the whole file, so a substituted or tampered artifact
+is a hard failure rather than a silent upgrade.
+
+The plugin goes on first, so the lock is on disk to install from — no separate
+download, and no trusting a URL that could answer differently tomorrow:
 
 ```bash
-pipx install 'glanced[runtime,gui]'
-glancectl setup
 omarchy plugin add https://github.com/ayandexyz/omarchy-glance.git --enable
+python -m venv ~/.local/share/glance
+~/.local/share/glance/bin/pip install --require-hashes \
+    -r ~/.config/omarchy/plugins/io.github.ayandexyz.glance/glanced-0.3.4.lock
+~/.local/share/glance/bin/glancectl setup
 ```
+
+Nothing to configure afterwards: `~/.local/share/glance/bin/glancectl` is one
+of the three locations the panel looks in, so it finds that venv on its own.
+**glancectl path** in the settings is for anywhere else, and wants the venv
+binary spelled out in full — not `~`, and not a symlink, because the check
+above refuses both.
 
 `setup` fetches the models, writes the user unit, wires the lock screen and
 applies the indicator, behind one password prompt, so the daemon is running
 and wired before the plugin ever looks for it. The panel's buttons do the same
 steps one at a time if you would rather watch them.
 
-The `gui` extra is PySide6, which the **Enroll** button uses for the passphrase
-window and the guided sweep. Without it the button enrolls in a terminal
-instead, so it still works.
+The lock covers the `runtime` and `gui` extras together. `gui` is PySide6,
+which the **Enroll** button uses for the passphrase window and the guided
+sweep; it is the bulk of the download, and without it the button enrolls in a
+terminal instead.
 
-There is nothing to configure: the plugin looks for `glancectl` where the
-package puts it and then where pipx does. **glancectl path** in the settings is
-for a source checkout — give the venv binary in full, since the check refuses
-symlinks and so cannot take the `~/.local/bin` one.
+**What the lock does and does not promise.** It fixes the exact bytes of every
+package this daemon executes, so the code behind `glancectl` cannot drift
+between two installs of the same documented commit. It is generated for
+CPython 3.14 on x86_64 Linux, which is what Omarchy ships; another interpreter
+or architecture resolves different wheels and needs it regenerated. And it is
+a pin, not a provenance claim: it says every install gets the same bytes, not
+that those bytes were audited.
+
+An unpinned `pipx install 'glanced[runtime,gui]'` still works, and is a
+perfectly ordinary way to install a Python application. But it resolves the
+dependency floors in `pyproject.toml` — `numpy>=1.26`, `mediapipe>=0.10.14`,
+`opencv-python>=4.9` and the rest — to whatever is newest on the day, so two
+people following the same instructions do not necessarily end up running the
+same code. That is why the locked install is the documented one.
 
 Then click the bar icon and follow it. The panel asks for one thing at a time
 and gives you a button for each:
@@ -162,9 +189,10 @@ omarchy plugin remove io.github.ayandexyz.glance
 That takes the widget off the bar and deletes the plugin directory. It leaves
 the daemon alone: nothing about your enrollment, your PAM stack, or the
 `glanced` service belongs to this plugin. To undo those, run
-`glancectl setup-pam --remove`, `glancectl install-service --remove` and
-`pipx uninstall glanced` (or `packaging/install.sh --uninstall` from a
-checkout).
+`glancectl setup-pam --remove`, `glancectl install-service --remove`, and then
+delete the venv the daemon lives in — `rm -rf ~/.local/share/glance` for the
+locked install above, `pipx uninstall glanced` for a pipx one, or
+`packaging/install.sh --uninstall` from a checkout.
 
 ## Settings
 
