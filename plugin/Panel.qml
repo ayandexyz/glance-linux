@@ -135,6 +135,7 @@ Ui.Panel {
           }
           iconComponent: Component {
             Text {
+              textFormat: Text.PlainText
               text: "󰱻"
               color: root.foreground
               font.family: root.fontFamily
@@ -153,6 +154,7 @@ Ui.Panel {
           visible: root.nextAction !== null && !backend.binaryMissing && backend.fetchError === ""
 
           Text {
+            textFormat: Text.PlainText
             width: parent.width
             text: root.nextAction ? root.nextAction.explain : ""
             color: root.foreground
@@ -175,6 +177,7 @@ Ui.Panel {
           }
 
           Text {
+            textFormat: Text.PlainText
             width: parent.width
             visible: !root.canArm
             text: root.nextAction ? root.nextAction.hint : ""
@@ -185,6 +188,7 @@ Ui.Panel {
           }
 
           Text {
+            textFormat: Text.PlainText
             width: parent.width
             visible: backend.launchError !== ""
             text: backend.launchError
@@ -260,6 +264,7 @@ Ui.Panel {
             model: root.status ? root.status.identities : []
 
             delegate: Text {
+              textFormat: Text.PlainText
               required property var modelData
               width: parent ? parent.width : 0
               text: GlanceLogic.identityLine(modelData)
@@ -271,6 +276,7 @@ Ui.Panel {
           }
 
           Text {
+            textFormat: Text.PlainText
             width: parent.width
             text: {
               if (!root.status) return ""
@@ -300,6 +306,7 @@ Ui.Panel {
           }
 
           Text {
+            textFormat: Text.PlainText
             width: parent.width
             text: GlanceLogic.lockLabel(root.status)
             color: root.status && root.status.pam && root.status.pam.wired === true ? root.foreground : root.dim
@@ -309,6 +316,7 @@ Ui.Panel {
           }
 
           Text {
+            textFormat: Text.PlainText
             width: parent.width
             visible: text !== ""
             text: GlanceLogic.indicatorLabel(root.status)
@@ -333,6 +341,7 @@ Ui.Panel {
           }
 
           Text {
+            textFormat: Text.PlainText
             width: parent.width
             text: GlanceLogic.lastScanText(root.status, root.nowMs)
             color: root.severityColor(GlanceLogic.outcomeSeverity(
@@ -344,6 +353,7 @@ Ui.Panel {
           }
 
           Text {
+            textFormat: Text.PlainText
             width: parent.width
             visible: text !== ""
             text: GlanceLogic.lastScanReason(root.status)
@@ -356,6 +366,7 @@ Ui.Panel {
 
         // Action feedback: the error from arm/disarm, or a scan that is running.
         Text {
+          textFormat: Text.PlainText
           width: parent.width
           visible: text !== ""
           text: {
@@ -379,6 +390,7 @@ Ui.Panel {
           visible: backend.binaryMissing
 
           Text {
+            textFormat: Text.PlainText
             width: parent.width
             text: "glancectl is not usable"
             color: root.urgent
@@ -389,6 +401,7 @@ Ui.Panel {
           }
 
           Text {
+            textFormat: Text.PlainText
             width: parent.width
             visible: backend.binaryProblem !== ""
             text: backend.binaryProblem
@@ -399,6 +412,7 @@ Ui.Panel {
           }
 
           Text {
+            textFormat: Text.PlainText
             width: parent.width
             text: "Install the glanced package, or set 'glancectl path' in the widget settings to the absolute path of a glancectl owned by you or root."
             color: root.dim
@@ -409,6 +423,7 @@ Ui.Panel {
         }
 
         Text {
+          textFormat: Text.PlainText
           width: parent.width
           visible: !backend.binaryMissing && backend.fetchError !== ""
           text: backend.fetchError
@@ -428,6 +443,7 @@ Ui.Panel {
           height: Math.max(footerText.implicitHeight, footerActions.implicitHeight)
 
           Text {
+            textFormat: Text.PlainText
             id: footerText
             anchors.left: parent.left
             anchors.verticalCenter: parent.verticalCenter
