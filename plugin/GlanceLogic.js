@@ -8,15 +8,10 @@
 // through PATH: a shell plugin runs as the user, and a shadowed `systemctl`
 // or `glancectl` earlier on an inherited PATH would otherwise run in place of
 // the real one, on the way to the interactive PAM setup step.
-var DEFAULT_GLANCECTL = "/usr/bin/glancectl"
 // Where the locked install in the README puts the binary: a plain venv built
 // from `glanced-0.3.4.lock`, every package in it pinned to one version and one
-// SHA-256. This is the documented install, so it is tried before pipx's.
+// SHA-256. It is the only path the panel will pick on its own.
 var LOCKED_GLANCECTL_SUFFIX = "/.local/share/glance/bin/glancectl"
-// Where `pipx install glanced` puts the binary. pipx also drops a symlink in
-// ~/.local/bin, which the ownership rules refuse, so the venv file itself is
-// the only usable one.
-var PIPX_GLANCECTL_SUFFIX = "/.local/share/pipx/venvs/glanced/bin/glancectl"
 var SYSTEMCTL = "/usr/bin/systemctl"
 var SETSID = "/usr/bin/setsid"
 var LAUNCH_TERMINAL = "/usr/bin/omarchy-launch-terminal"
@@ -214,14 +209,21 @@ function stateLabel(status) {
 // `arm` alone has no command. The passphrase belongs in the panel's own field,
 // where it goes to stdin — never into an argv any other process can read.
 function nextAction(status, glancectl, user) {
-  var ctl = String(glancectl || DEFAULT_GLANCECTL)
+  var ctl = String(glancectl || "glancectl")
+  // A command is only ever offered against an absolute glancectl. Called with
+  // a bare name -- as nextStep does, to print a line rather than run one --
+  // the steps keep their text and lose their button, so no argv the plugin can
+  // produce ever begins with something PATH would have to resolve.
+  var runnable = ctl.charAt(0) === "/"
   function action(key, explain, label, icon, command, terminal, detached) {
+    var argv = command
+    if (argv && argv[0] === ctl && !runnable) argv = null
     return {
       key: key,
       explain: explain,
       label: label,
       icon: icon,
-      command: command,
+      command: argv,
       hint: command ? command.join(" ") : ctl + " " + key,
       terminal: terminal === true,
       detached: detached === true
@@ -392,26 +394,28 @@ function parseActionResult(stdout, stderr, exitCode) {
 // entry point and PYTHONPATH or LD_PRELOAD would let a user-writable file run
 // inside it. The rest of the session environment stays: the terminal launcher
 // and the enrollment window need the Wayland and D-Bus variables.
-// The places an installed glancectl actually is, tried in order when the
-// setting is empty: the distribution package first, then the locked venv the
-// README builds, then the pipx venv. This is a fixed list of three known
-// install locations, not a search -- no PATH
-// lookup, no globbing, nothing walking $HOME -- and each one still has to pass
-// the ownership rules before anything runs through it. Without the last two,
-// an install into either venv leaves every button in the panel broken until
-// the user finds the setting, and a venv is how the daemon is installed while
-// there is no AUR package.
+// The one place the panel will find a glancectl by itself: the venv the
+// README's locked install builds. One entry, not a search -- no PATH lookup,
+// no globbing, nothing walking $HOME -- and it still has to pass the ownership
+// rules before anything runs through it.
+//
+// It used to try /usr/bin/glancectl first and fall back to pipx's venv. Both
+// are gone, because an automatic fallback is a decision the plugin makes on
+// the user's behalf about which code gets to run `setup-pam`, and neither of
+// those paths has a dependency set anyone has looked at: a pipx install
+// resolves the `>=` floors in glanced's metadata afresh, and there is no
+// published package behind /usr/bin. The ownership and inode checks bind a
+// local file between the check and the exec -- they say nothing about which
+// versions of 28 packages are sitting behind it.
+//
+// So a glancectl installed any other way has to be named in the settings. That
+// is the point: an unpinned daemon is then something the user chose and can
+// see in the panel, not something discovered silently.
 function defaultGlancectlCandidates(home) {
-  var candidates = [DEFAULT_GLANCECTL]
   var base = String(home === undefined || home === null ? "" : home).trim()
-  // An empty or relative HOME would make a path the verifier refuses anyway;
-  // leaving it out keeps the refusal about the package path the user can see.
-  if (base.charAt(0) === "/") {
-    var home_ = base.replace(/\/+$/, "")
-    candidates.push(home_ + LOCKED_GLANCECTL_SUFFIX)
-    candidates.push(home_ + PIPX_GLANCECTL_SUFFIX)
-  }
-  return candidates
+  // An empty or relative HOME would make a path the verifier refuses anyway.
+  if (base.charAt(0) !== "/") return []
+  return [base.replace(/\/+$/, "") + LOCKED_GLANCECTL_SUFFIX]
 }
 
 function childEnvironment() {

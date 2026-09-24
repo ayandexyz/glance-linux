@@ -92,7 +92,10 @@ install this, and puts `glancectl` on your PATH. It resolves the dependency
 floors below to whatever is newest that day, though, so two people running the
 same command do not necessarily get the same code. The lock exists because the
 Omarchy plugin executes `glancectl` for privileged setup steps, and a
-reviewable install should be one that reproduces.
+reviewable install should be one that reproduces. For the same reason the
+plugin no longer discovers a pipx venv on its own: install that way and you
+point its **glancectl path** setting at the binary yourself, which is a choice
+you can see rather than one made for you.
 
 Then click the bar icon and **Enroll**, and `omarchy-restart-shell` to load the
 indicator. `setup` asks for your password once and does what `install-service`,

@@ -9,7 +9,7 @@ const assert = require("assert")
 
 const source = fs.readFileSync(path.join(__dirname, "..", "GlanceLogic.js"), "utf8")
   .replace(/^\.pragma library\s*$/m, "")
-const G = vm.runInNewContext(source + "\n;({ parseStatus, stateLabel, nextStep, outcomeLabel, outcomeSeverity, missingModels, identityLine, elapsed, lastScanText, lastScanReason, parseActionResult, clamp, lockLabel, indicatorLabel, nextAction, launchCommand, pathSyntaxProblem, pathPrefixes, statCommand, checkBinary, appendCapped, childEnvironment, bounded, deadlineHit, sameIdentity, describeIdentity, verifiedCommand, identityToken, EXEC_VERIFIER, PYTHON3, SYSTEMCTL, SETSID, LAUNCH_TERMINAL, STAT, TIMEOUT, DEFAULT_GLANCECTL, defaultGlancectlCandidates, PIPX_GLANCECTL_SUFFIX, SAFE_PATH, CHECK_DEADLINE_SEC, STATUS_DEADLINE_SEC, ACTION_DEADLINE_SEC, LAUNCH_DEADLINE_SEC, KILL_GRACE_SEC })")
+const G = vm.runInNewContext(source + "\n;({ parseStatus, stateLabel, nextStep, outcomeLabel, outcomeSeverity, missingModels, identityLine, elapsed, lastScanText, lastScanReason, parseActionResult, clamp, lockLabel, indicatorLabel, nextAction, launchCommand, pathSyntaxProblem, pathPrefixes, statCommand, checkBinary, appendCapped, childEnvironment, bounded, deadlineHit, sameIdentity, describeIdentity, verifiedCommand, identityToken, EXEC_VERIFIER, PYTHON3, SYSTEMCTL, SETSID, LAUNCH_TERMINAL, STAT, TIMEOUT, defaultGlancectlCandidates, LOCKED_GLANCECTL_SUFFIX, SAFE_PATH, CHECK_DEADLINE_SEC, STATUS_DEADLINE_SEC, ACTION_DEADLINE_SEC, LAUNCH_DEADLINE_SEC, KILL_GRACE_SEC })")
 // Objects built inside the vm have a foreign Object prototype, which trips
 // deepStrictEqual; compare by value instead.
 function assertSame(actual, expected, message) {
@@ -51,7 +51,10 @@ test("state label ranks the most urgent condition first", () => {
 })
 
 const status = overrides => G.parseStatus(JSON.stringify({ ...online, ...overrides }))
-const action = (overrides, ctl, user) => G.nextAction(status(overrides), ctl || "glancectl", user || "$USER")
+// An absolute glancectl, because that is the only kind the panel ever runs:
+// the locked venv the README builds is what it resolves on its own.
+const CTL = "/home/ayan/.local/share/glance/bin/glancectl"
+const action = (overrides, ctl, user) => G.nextAction(status(overrides), ctl || CTL, user || "$USER")
 
 test("next step is the single command that unblocks the user", () => {
   assert.strictEqual(G.nextStep(status({ reachable: false })), "/usr/bin/systemctl --user enable --now glanced")
@@ -102,11 +105,11 @@ test("launch wrapping matches the shape of each step", () => {
   // sudo needs somewhere to be typed, and what it types for is the checked
   // object rather than the name: the terminal runs the verifier, not glancectl.
   assertSame(G.launchCommand(action({ pam: { module: true, wired: false } }), ID),
-    ["/usr/bin/omarchy-launch-terminal"].concat(G.verifiedCommand(["glancectl", "setup-pam"], ID)))
+    ["/usr/bin/omarchy-launch-terminal"].concat(G.verifiedCommand([CTL, "setup-pam"], ID)))
 
   // The download prints progress; give it a terminal to print into.
   assertSame(G.launchCommand(action({ models: {} }), ID),
-    ["/usr/bin/omarchy-launch-terminal"].concat(G.verifiedCommand(["glancectl", "fetch-model"], ID)))
+    ["/usr/bin/omarchy-launch-terminal"].concat(G.verifiedCommand([CTL, "fetch-model"], ID)))
 
   // Detached, so reloading the shell mid-sweep does not kill the window.
   assertSame(G.launchCommand(action({ enrolled: false }, "/opt/glancectl", "ayan"), ID),
@@ -127,7 +130,7 @@ test("arming has no command because the passphrase must not reach argv", () => {
   const arm = action({ armed: false })
   assert.strictEqual(arm.key, "arm")
   assert.strictEqual(arm.command, null)
-  assert.strictEqual(arm.hint, "glancectl arm")
+  assert.strictEqual(arm.hint, CTL + " arm")
 })
 
 test("next action uses the glancectl the backend resolved, not the name", () => {
@@ -227,11 +230,17 @@ test("clamp tolerates junk", () => {
 })
 
 test("every fixed tool is an absolute path and nothing is left to PATH", () => {
-  for (const tool of [G.SYSTEMCTL, G.SETSID, G.LAUNCH_TERMINAL, G.STAT, G.DEFAULT_GLANCECTL]) {
+  for (const tool of [G.SYSTEMCTL, G.SETSID, G.LAUNCH_TERMINAL, G.STAT]) {
     assert.ok(tool.startsWith("/usr/bin/"), tool + " is not under /usr/bin")
   }
-  // With no glancectl given, the packaged one is used — not a bare name.
-  assert.strictEqual(G.nextAction(status({ enrolled: false }), "", "ayan").command[0], "/usr/bin/glancectl")
+  // With no absolute glancectl, there is no runnable command at all: the step
+  // keeps its text and loses its button, rather than emitting a bare name for
+  // PATH to resolve.
+  const unresolved = G.nextAction(status({ enrolled: false }), "", "ayan")
+  assert.strictEqual(unresolved.command, null)
+  assert.ok(unresolved.explain.length > 0, "the step must still explain itself")
+  assert.strictEqual(G.nextAction(status({ enrolled: false }), "/usr/bin/glancectl", "ayan").command[0],
+    "/usr/bin/glancectl")
   // Every argv the plugin can produce starts with an absolute path.
   for (const overrides of [{ reachable: false }, { models: {} }, { enrolled: false }, { pam: { module: true, wired: false } }]) {
     const argv = G.launchCommand(G.nextAction(status(overrides), "/usr/bin/glancectl", "ayan"), ID)
@@ -413,25 +422,34 @@ test("what runs is the checked object, not the pathname it had", () => {
   assert.strictEqual(G.identityToken(null), "")
 })
 
-test("default candidates try the package, then the locked venv, then pipx", () => {
+test("the locked venv is the only path the panel picks on its own", () => {
   const got = G.defaultGlancectlCandidates("/home/ayan")
   assert.deepStrictEqual(Array.from(got), [
-    "/usr/bin/glancectl",
     "/home/ayan/.local/share/glance/bin/glancectl",
-    "/home/ayan/.local/share/pipx/venvs/glanced/bin/glancectl",
   ])
+})
+
+test("no automatic fallback to an install nobody pinned", () => {
+  // The reviewed answer to a supply-chain finding: /usr/bin/glancectl has no
+  // published package behind it, and a pipx venv resolves glanced's `>=`
+  // floors afresh. Neither may be reached without the user naming it, because
+  // the panel's buttons lead to `setup-pam`.
+  const got = Array.from(G.defaultGlancectlCandidates("/home/ayan"))
+  for (const forbidden of ["/usr/bin/glancectl", "pipx"]) {
+    assert.ok(!got.some((c) => c.includes(forbidden)),
+      forbidden + " must not be an automatic candidate, got " + JSON.stringify(got))
+  }
 })
 
 test("a trailing slash on HOME does not double up", () => {
   const got = G.defaultGlancectlCandidates("/home/ayan///")
-  assert.strictEqual(got[1], "/home/ayan/.local/share/glance/bin/glancectl")
-  assert.strictEqual(got[2], "/home/ayan/.local/share/pipx/venvs/glanced/bin/glancectl")
+  assert.strictEqual(got[0], "/home/ayan/.local/share/glance/bin/glancectl")
 })
 
-test("an unusable HOME leaves only the package path", () => {
+test("an unusable HOME produces no candidate at all", () => {
   for (const home of ["", "   ", "relative/path", undefined, null]) {
     const got = G.defaultGlancectlCandidates(home)
-    assert.deepStrictEqual(Array.from(got), ["/usr/bin/glancectl"],
+    assert.deepStrictEqual(Array.from(got), [],
       "HOME " + JSON.stringify(home) + " must not produce a candidate")
   }
 })

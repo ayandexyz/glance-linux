@@ -73,10 +73,10 @@ Item {
 
   readonly property int refreshIntervalSec: Math.round(GlanceLogic.clamp(
     setting("refreshIntervalSec", 30), 5, 600))
-  // The configured path wins; otherwise the known install locations are tried
-  // in order, the package's first and the pipx venv's second. There is still
-  // no search: the list is fixed and each entry must pass the same ownership
-  // rules before anything runs through it.
+  // The configured path wins; otherwise the one location the panel will pick on
+  // its own, the venv the README's locked install builds. No search, and no
+  // fallback to an install whose dependency set nobody has pinned -- that has
+  // to be named here deliberately.
   readonly property string configuredPath: String(setting("glancectlPath", "")).trim()
   readonly property var defaultCandidates: GlanceLogic.defaultGlancectlCandidates(Quickshell.env("HOME"))
   // Which default is being checked. Only ever advances past one that was
@@ -84,7 +84,9 @@ Item {
   property int candidateIndex: 0
   readonly property string binaryPath: configuredPath !== ""
     ? configuredPath
-    : defaultCandidates[Math.min(candidateIndex, defaultCandidates.length - 1)]
+    : (defaultCandidates.length > 0
+       ? defaultCandidates[Math.min(candidateIndex, defaultCandidates.length - 1)]
+       : "")
   // Reasons the earlier defaults gave, so a refusal names every path tried
   // rather than only the last.
   property var candidateProblems: []
@@ -143,6 +145,14 @@ Item {
 
   function checkBinary() {
     if (checkProcess.running) return
+    if (binaryPath === "") {
+      // No usable HOME, so the one default path cannot be spelled. Nothing to
+      // fall back to on purpose: say so instead of guessing at a location.
+      refuseBinary("no glancectl to check: HOME is not an absolute path, so the "
+                   + "default location cannot be resolved. Set 'glancectl path' "
+                   + "in the widget settings.")
+      return
+    }
     var command = GlanceLogic.statCommand(binaryPath)
     if (!command) {
       refuseBinary(binaryPath + ": " + GlanceLogic.pathSyntaxProblem(binaryPath))

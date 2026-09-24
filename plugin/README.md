@@ -27,10 +27,13 @@ not running PAM talks to the daemon exactly the same.
 A shell plugin runs unsandboxed as you, so the process boundary is where the
 care goes. Four rules hold for every child process:
 
-- **Absolute paths only.** `/usr/bin/glancectl`, `/usr/bin/systemctl`,
+- **Absolute paths only.** The fixed tools are `/usr/bin/systemctl`,
   `/usr/bin/setsid`, `/usr/bin/omarchy-launch-terminal`, `/usr/bin/stat`,
-  `/usr/bin/timeout`, `/usr/bin/python3`. Nothing is resolved through `PATH`, so a shadowed
-  executable earlier on an inherited `PATH` cannot stand in for the real one.
+  `/usr/bin/timeout` and `/usr/bin/python3`; `glancectl` itself is absolute
+  too, either the locked venv below or the path you set. Nothing is resolved
+  through `PATH`, so a shadowed executable earlier on an inherited `PATH`
+  cannot stand in for the real one, and no step is offered a command at all
+  unless its `glancectl` is an absolute path.
 - **The glancectl it runs is checked before every run.** Whether the default
   or the path you set, each invocation is preceded by one `stat(1)` call over
   every component, and is refused unless the path is absolute, contains no
@@ -119,11 +122,19 @@ python -m venv ~/.local/share/glance
 ~/.local/share/glance/bin/glancectl setup
 ```
 
-Nothing to configure afterwards: `~/.local/share/glance/bin/glancectl` is one
-of the three locations the panel looks in, so it finds that venv on its own.
-**glancectl path** in the settings is for anywhere else, and wants the venv
-binary spelled out in full — not `~`, and not a symlink, because the check
-above refuses both.
+Nothing to configure afterwards: `~/.local/share/glance/bin/glancectl` is the
+**only** location the panel resolves on its own, so it finds that venv and
+nothing else. **glancectl path** in the settings is how you point it anywhere
+else, and wants the binary spelled out in full — not `~`, and not a symlink,
+because the check above refuses both.
+
+That single default is deliberate. The panel used to try `/usr/bin/glancectl`
+first and fall back to a pipx venv, which meant it could silently pick a daemon
+whose 28 dependencies had resolved to whatever was newest that day — and its
+buttons lead to `setup-pam`, which edits `/etc/pam.d` under `sudo`. Choosing
+that on your behalf is not the plugin's call to make. An install done any other
+way still works perfectly well; it just has to be named in the settings, where
+you can see it.
 
 `setup` fetches the models, writes the user unit, wires the lock screen and
 applies the indicator, behind one password prompt, so the daemon is running
@@ -148,7 +159,14 @@ perfectly ordinary way to install a Python application. But it resolves the
 dependency floors in `pyproject.toml` — `numpy>=1.26`, `mediapipe>=0.10.14`,
 `opencv-python>=4.9` and the rest — to whatever is newest on the day, so two
 people following the same instructions do not necessarily end up running the
-same code. That is why the locked install is the documented one.
+same code. That is why the locked install is the documented one, and why it is
+the only one the panel will find by itself.
+
+And the limit of the per-run check, said plainly: it establishes that the file
+the panel `stat`ed is the file it `exec`s, which closes the swap-between-check-
+and-use race. It says nothing about which versions of those 28 packages sit
+behind that file. Only the lock does that, which is why the default location is
+the locked venv and not a discovery order.
 
 Then click the bar icon and follow it. The panel asks for one thing at a time
 and gives you a button for each:
