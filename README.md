@@ -63,7 +63,7 @@ the shell's own lock have, but one you should read before relying on it.
 
 ## Install
 
-From PyPI, into a venv built from `packaging/glanced-0.3.4.lock`. That file
+From PyPI, into a venv built from `packaging/glanced-0.3.5.lock`. That file
 pins every package in the dependency set -- all 28, `glanced` itself included
 -- to one exact version and one exact SHA-256, and pip runs in hash-checking
 mode over the whole of it, so a substituted artifact fails the install instead
@@ -73,7 +73,7 @@ compiles a small PAM module, so `base-devel` and `pam` need to be there --
 
 ```bash
 python -m venv ~/.local/share/glance
-~/.local/share/glance/bin/pip install --require-hashes -r packaging/glanced-0.3.4.lock
+~/.local/share/glance/bin/pip install --require-hashes -r packaging/glanced-0.3.5.lock
 ~/.local/share/glance/bin/glancectl setup   # models, service, PAM, lock indicator
 omarchy plugin add https://github.com/ayandexyz/omarchy-glance.git --enable
 ```
@@ -84,7 +84,7 @@ differ:
 
 ```bash
 python -m pip install --dry-run --ignore-installed \
-    --report report.json 'glanced[runtime,gui]==0.3.4'
+    --report report.json 'glanced[runtime,gui]==0.3.5'
 ```
 
 `pipx install 'glanced[runtime,gui]'` is still a perfectly ordinary way to
