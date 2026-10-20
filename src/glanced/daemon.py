@@ -363,7 +363,9 @@ class Daemon:
             with Camera(CameraConfig(device=self.device)) as camera:
                 for native in camera.frames():
                     now = time.monotonic()
-                    observation = processor.process(native, now, want_embedding=not pipeline.matched)
+                    # An embedding every frame, not just until the first match: it is
+                    # what tells the pipeline the face is still the one that matched.
+                    observation = processor.process(native, now)
                     if preview is not None:
                         # Published either way: with no face detected the crop
                         # falls back to the middle of the frame, which is what
@@ -372,6 +374,7 @@ class Daemon:
                             native, observation.native_bounding_box if observation else None, now
                         )
                     if observation is None:
+                        pipeline.face_lost()
                         if not saw_face and now - started > self.no_face_timeout:
                             return ScanResult(Outcome.NO_FACE, reason="No face in view.")
                         expired = pipeline.expired()
@@ -379,7 +382,9 @@ class Daemon:
                             return expired
                         continue
                     saw_face = True
-                    result = pipeline.observe(observation.liveness_frame, observation.embedding)
+                    result = pipeline.observe(
+                        observation.liveness_frame, observation.embedding, observation.face.bounding_box
+                    )
                     if result.outcome is not Outcome.PENDING:
                         return result
 

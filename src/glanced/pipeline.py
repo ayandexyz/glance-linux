@@ -12,6 +12,15 @@ An unlock requires all of:
 3. An enabled identity matches above the configured similarity threshold.
 4. Liveness accepts the detected face.
 
+Conditions 3 and 4 must hold for *the same face*. Both gates accumulate over a
+scan — liveness cues latch, and a match is remembered — so without binding them
+a photo of the owner could satisfy recognition and a different, live person
+could then blink their way through liveness (or the other way round). The
+pipeline therefore follows one subject at a time: a face that loses detection,
+jumps position, or stops resembling the face it started as is a new subject,
+and both gates start over for it. An unlock is only ever granted on a frame
+whose own embedding matches.
+
 Upstream has a fifth: Accessibility permission, so it can type the password into
 the lock screen. There is no equivalent here, and no password. The daemon
 answers a PAM conversation; the credential never exists.
@@ -37,6 +46,17 @@ DEFAULT_MATCH_THRESHOLD = 0.36
 #: How long a scan keeps looking before giving up. Liveness may sit PENDING for
 #: this whole duration without that being a failure — see `cues.py`.
 DEFAULT_SCAN_TIMEOUT = 8.0
+
+#: Cosine similarity a frame's embedding must keep with the first embedding of
+#: the subject being followed. Stricter than the match threshold: this compares
+#: one sitting against itself — same camera, same light, seconds apart — where
+#: the same face scores far higher than it does against an enrollment.
+SAME_FACE_THRESHOLD = 0.5
+
+#: Overlap (intersection over union) a face box must keep with the previous
+#: frame's to be the same subject. Head motion between frames at camera rate
+#: stays well above this; a face swapped in elsewhere in the frame does not.
+SAME_FACE_MIN_OVERLAP = 0.3
 
 
 class Outcome(Enum):
@@ -80,17 +100,28 @@ class UnlockPipeline:
         self.analyzer.mode_provider = lambda: mode
         self._started: Optional[float] = None
         self._match: Optional[tuple[Identity, float]] = None
+        #: The subject being followed: its first embedding and its last box.
+        self._anchor: Optional[np.ndarray] = None
+        self._box: Optional[tuple[float, float, float, float]] = None
 
     def begin(self) -> None:
-        self.analyzer.reset()
         self._started = time.monotonic()
-        self._match = None
+        self._new_subject()
 
-    @property
-    def matched(self) -> bool:
-        """True once an identity has matched — after which the caller can stop
-        paying for embeddings and let liveness finish on its own."""
-        return self._match is not None
+    def _new_subject(self) -> None:
+        """Forget everything either gate learned about the previous face."""
+        self.analyzer.reset()
+        self._match = None
+        self._anchor = None
+        self._box = None
+
+    def face_lost(self) -> None:
+        """A frame with no face: whoever comes back into view is a new subject.
+
+        Without this, a photo could be lowered out of view and a live face
+        raised in its place, with nothing in between for `observe` to see.
+        """
+        self._new_subject()
 
     def expired(self) -> Optional[ScanResult]:
         """The terminal result if the scan has run out of time, else None.
@@ -108,30 +139,71 @@ class UnlockPipeline:
         )
 
     def observe(
-        self, liveness_frame: LivenessFrame, embedding: Optional[np.ndarray]
+        self,
+        liveness_frame: LivenessFrame,
+        embedding: Optional[np.ndarray],
+        bounding_box: Optional[tuple[float, float, float, float]] = None,
     ) -> ScanResult:
         """Fold one frame in and report where the scan stands.
 
         `embedding` may be None for a frame that had a face but no usable
         alignment. Liveness is still fed, deliberately: keeping the window dense
         is what makes it an independent gate rather than one starved by
-        recognition's own confidence.
+        recognition's own confidence. Such a frame is tied to the subject by
+        `bounding_box` (x, y, w, h) alone, and can never be the one that unlocks.
         """
         if self._started is None:
             raise RuntimeError("call begin() before observe()")
+
+        if not self._same_subject(embedding, bounding_box):
+            self._new_subject()
+        if self._anchor is None and embedding is not None:
+            self._anchor = embedding
+        if bounding_box is not None:
+            self._box = bounding_box
 
         snapshot = self.analyzer.observe(liveness_frame)
 
         if snapshot.decision.is_denied:
             return ScanResult(Outcome.SPOOF_DENIED, reason=snapshot.decision.denial_reason)
 
-        if embedding is not None and self._match is None:
-            self._match = self.store.match(embedding, self.match_threshold)
+        current = None
+        if embedding is not None:
+            current = self.store.match(embedding, self.match_threshold)
+            if self._match is None:
+                self._match = current
 
-        # Both gates, in either order — a match with liveness still pending is
-        # not an unlock, and confirmed liveness with no match is not either.
-        if self._match is not None and snapshot.decision.is_confirmed:
-            identity, score = self._match
+        # Both gates, in either order, but on one face — a match with liveness
+        # still pending is not an unlock, confirmed liveness with no match is
+        # not either, and neither is liveness from this subject paired with a
+        # match remembered from another. This frame must match by itself.
+        if current is not None and snapshot.decision.is_confirmed:
+            identity, score = current
             return ScanResult(Outcome.UNLOCKED, identity=identity, similarity=score)
 
         return self.expired() or ScanResult(Outcome.PENDING)
+
+    def _same_subject(
+        self,
+        embedding: Optional[np.ndarray],
+        bounding_box: Optional[tuple[float, float, float, float]],
+    ) -> bool:
+        if bounding_box is not None and self._box is not None:
+            if _overlap(bounding_box, self._box) < SAME_FACE_MIN_OVERLAP:
+                return False
+        if embedding is not None and self._anchor is not None:
+            if float(np.dot(embedding, self._anchor)) < SAME_FACE_THRESHOLD:
+                return False
+        return True
+
+
+def _overlap(a: tuple[float, float, float, float], b: tuple[float, float, float, float]) -> float:
+    """Intersection over union of two (x, y, w, h) boxes."""
+    ax, ay, aw, ah = a
+    bx, by, bw, bh = b
+    width = min(ax + aw, bx + bw) - max(ax, bx)
+    height = min(ay + ah, by + bh) - max(ay, by)
+    if width <= 0 or height <= 0:
+        return 0.0
+    intersection = width * height
+    return intersection / (aw * ah + bw * bh - intersection)
