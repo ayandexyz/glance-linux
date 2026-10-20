@@ -111,6 +111,17 @@ itself included — to one exact version and one exact SHA-256. pip runs in
 hash-checking mode over the whole file, so a substituted or tampered artifact
 is a hard failure rather than a silent upgrade.
 
+The hash says the wheel has not changed since it was locked; provenance says
+what it was built from. `glanced` is published only by the repository's
+`release` workflow, from a version tag, through PyPI Trusted Publishing, with an
+attestation naming the commit. To check the locked wheel yourself:
+
+```bash
+pip download --no-deps --require-hashes -d wheel \
+    -r <(grep -A1 '^glanced==' glanced-X.Y.Z.lock)
+gh attestation verify wheel/glanced-*.whl --repo ayandexyz/glance-linux
+```
+
 The plugin goes on first, so the lock is on disk to install from — no separate
 download, and no trusting a URL that could answer differently tomorrow:
 
