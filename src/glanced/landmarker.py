@@ -45,6 +45,13 @@ class DetectedFace:
 
 class Landmarker:
     def __init__(self, task_path: Optional[Path] = None, num_faces: int = 1) -> None:
+        # Where mediapipe pulls in TensorFlow's bundled protobuf (the Arch
+        # packages do), loading it before onnxruntime aborts onnxruntime's
+        # module init. Whichever loads first wins, so make it onnxruntime (#5).
+        try:
+            import onnxruntime  # noqa: F401
+        except ImportError:
+            pass
         from mediapipe.tasks.python import BaseOptions, vision
 
         self.task_path = Path(task_path or paths.landmarker_task())
