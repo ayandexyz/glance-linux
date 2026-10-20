@@ -20,11 +20,15 @@ def _face(yaw, pitch, width=200.0):
     return SimpleNamespace(yaw=yaw, pitch=pitch, bounding_box=(0.0, 0.0, width, width))
 
 
-def _observation(embedding, yaw, pitch, *, reliable=True, width=200.0):
+def _observation(embedding, yaw, pitch, *, reliable=True, width=200.0, native_width=None):
+    # The tests' `frame_width` is native, so by default the working and native
+    # boxes coincide; pass `native_width` to model a downscaled working frame.
+    native = width if native_width is None else native_width
     return SimpleNamespace(
         embedding=embedding,
         face=_face(yaw, pitch, width),
         liveness_frame=SimpleNamespace(has_reliable_landmarks=reliable),
+        native_bounding_box=(0.0, 0.0, native, native),
     )
 
 
@@ -190,6 +194,22 @@ def test_a_face_too_far_away_is_not_enrolled():
         session.offer(_observation(_unit(), yaw, pitch, width=40.0), 10.0 + i * 0.2, frame_width=400)
     assert session.embeddings == []
     assert session.progress.too_far
+
+
+def test_face_size_is_judged_in_native_pixels_not_working_ones():
+    # A 1280-wide camera is downscaled to a 640 working frame: a face 300 px
+    # wide natively (23% of the frame, close enough) is 150 px in the working
+    # frame, which is under 20% of 1280 if the two spaces get mixed up.
+    session = enroll.GuidedSession()
+    yaw, pitch = _angles_for(_pose("centre"))
+    for i in range(20):
+        session.offer(
+            _observation(_unit(), yaw, pitch, width=150.0, native_width=300.0),
+            10.0 + i * 0.2,
+            frame_width=1280,
+        )
+    assert not session.progress.too_far
+    assert len(session.embeddings) == enroll.SAMPLES_PER_POSE
 
 
 def test_a_different_face_mid_sweep_is_rejected():
