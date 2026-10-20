@@ -1,7 +1,7 @@
 # Maintainer: Ayan De <deayan252@gmail.com>
 
 pkgname=glanced
-pkgver=0.3.5
+pkgver=0.3.6
 pkgrel=1
 pkgdesc="Face unlock for Linux with real liveness detection"
 arch=('x86_64')
@@ -56,7 +56,7 @@ check() {
   # The liveness model, the PAM-stack text transforms, the model search
   # order and the passphrase routing need nothing but numpy, so they run in a
   # build chroot with no camera and no display.
-  python -m pytest tests/test_liveness.py tests/test_pamsetup.py tests/test_paths.py \
+  python -m pytest tests/test_liveness.py tests/test_pipeline.py tests/test_pamsetup.py tests/test_paths.py \
     tests/test_enroll_passphrase.py -q
 }
 
