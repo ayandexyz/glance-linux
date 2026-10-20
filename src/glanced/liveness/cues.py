@@ -359,13 +359,15 @@ class LivenessEvaluator:
 def gloss_glare(frame: Optional[LivenessFrame]) -> CueReading:
     """Skin gives many small scattered specular points; glass gives one big flat
     blob. `specular_fraction` alone would fire on a bright forehead, so it is
-    gated by how concentrated that glare is."""
+    gated by how concentrated that glare is. The gate is a true gate: scattered
+    glare (cluster_factor 0) scores 0 however bright, or a shiny real face
+    could never pass (#10)."""
     if frame is None or frame.glare is None:
         return NO_READING
     glare = frame.glare
     fraction_score = ramp(glare.specular_fraction, 0.01, 0.08)
     cluster_factor = ramp(glare.specular_cluster_ratio, 0.3, 1.0)
-    level = fraction_score * (0.3 + 0.7 * cluster_factor)
+    level = fraction_score * cluster_factor
     # Below ~50 native px of face there is not enough detail to tell a glare blob
     # from a bright patch; ramps to full trust by ~130px.
     confidence = ramp(glare.crop_pixel_width, 50.0, 130.0)
