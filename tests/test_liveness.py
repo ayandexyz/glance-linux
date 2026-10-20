@@ -191,6 +191,16 @@ def test_gloss_glare_does_not_fire_on_a_scattered_shiny_forehead():
     assert cues_module.gloss_glare(frame).level < DEFAULT_TUNING.gloss_level
 
 
+def test_gloss_glare_does_not_fire_on_a_bright_but_scattered_real_face():
+    """Measured on a real face in normal light (#10): lots of specular pixel,
+    none of it pooled. The cluster gate has to be able to veto on its own."""
+    frame = synthetic.live_face_window(frame_count=4)[-1]
+    frame.glare = GlareSample(
+        crop_pixel_width=160.0, specular_fraction=0.18, specular_cluster_ratio=0.21
+    )
+    assert cues_module.gloss_glare(frame).level < DEFAULT_TUNING.gloss_level
+
+
 def test_gloss_glare_abstains_on_a_tiny_crop():
     """Below ~50px of face there is not enough detail to tell a glare blob from
     a bright patch, so the cue must abstain rather than convict."""

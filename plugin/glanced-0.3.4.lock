@@ -34,8 +34,8 @@ kiwisolver==1.5.1 \
     --hash=sha256:18a0cfb124546a4c2e6087c5f3029c7f44b37c85b142e0ced71f73a7599ac208
 matplotlib==3.11.2 \
     --hash=sha256:8c8255de28f986d935a64c9ca71c0ec2d2f41d355691f5ea684725dc91413f71
-mediapipe==1.0.1 \
-    --hash=sha256:121522251afc3c135e4b7b0c341dd5e050ad1ec87631127484f3c389ae385044
+mediapipe==0.10.35 \
+    --hash=sha256:db9a579df48cffe9570cd3e93f6a5d2dd089a1103b846c60c5b5de8a21c38db0
 numpy==2.5.3 \
     --hash=sha256:b0521d0f4aebb6e06189451025fa17a913287b13c03d5fe05c017333b654ea5b
 onnxruntime==1.30.0 \
