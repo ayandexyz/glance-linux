@@ -15,6 +15,31 @@ unlock path. Not a port of the app — none of the Swift is portable — but the
 part of Glance with real substance is: the five-cue liveness model that tells a
 face from a photograph.
 
+## Install
+
+```bash
+curl -fsSL https://www.glancelinux.website/install.sh | bash
+```
+
+That adds the plugin, installs the daemon with every package pinned by
+SHA-256, then sets up the service, PAM and lock screen -- one password prompt.
+Run it again to update.
+
+Then click the Glance icon in the top bar and choose **Glance panel → Enroll**:
+your face, and a passphrase you choose.
+
+To take it all back out:
+
+```bash
+curl -fsSL https://www.glancelinux.website/uninstall.sh | bash
+```
+
+It removes `pam_glance` from the lock-screen PAM stacks before deleting the
+module (so no stack is left naming a missing one), restores the stock lock
+screen, stops and deletes the service, removes the plugin, and deletes
+`~/.local/share/glance` -- daemon, models, and your encrypted enrollment. It
+asks once before touching anything.
+
 ## Why
 
 [Howdy](https://github.com/boltgolt/howdy) already does face unlock on Arch. Its
@@ -65,30 +90,7 @@ the shell's own lock have, but one you should read before relying on it.
 | Omarchy plugin (`plugin/`) | Bar widget + panel — see `plugin/README.md` |
 | Lock screen indicator (`patches/omarchy-lock-faceid/`) | Face ID-style capsule with a live camera view — a patch to Omarchy's lock plugin, applied by `glancectl setup-lock` and re-applied after `omarchy update` by a post-update hook |
 
-## Install
-
-```bash
-curl -fsSL https://www.glancelinux.website/install.sh | bash
-```
-
-That adds the plugin, installs the daemon with every package pinned by
-SHA-256, then sets up the service, PAM and lock screen -- one password prompt.
-Run it again to update. Then open the Glance panel and **Enroll**: your face,
-and a passphrase you choose.
-
-To take it all back out:
-
-```bash
-curl -fsSL https://www.glancelinux.website/uninstall.sh | bash
-```
-
-It removes `pam_glance` from the lock-screen PAM stacks before deleting the
-module (so no stack is left naming a missing one), restores the stock lock
-screen, stops and deletes the service, removes the plugin, and deletes
-`~/.local/share/glance` -- daemon, models, and your encrypted enrollment. It
-asks once before touching anything.
-
-### By hand
+## Install by hand
 
 What the installer does, step by step: from PyPI, into a venv built from
 `packaging/glanced-0.3.6.lock`. That file pins every package in the dependency set -- all 28, `glanced` itself included
