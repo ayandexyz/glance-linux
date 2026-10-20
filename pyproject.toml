@@ -19,7 +19,8 @@ dependencies = ["numpy>=1.26"]
 runtime = [
     "opencv-python>=4.9",
     "onnxruntime>=1.17",
-    "mediapipe>=0.10.14",
+    # 1.x is SIGKILLed building the FaceLandmarker, on 3.12 and 3.14 alike (#1).
+    "mediapipe>=0.10.14,<1",
     "cryptography>=42",
 ]
 dev = ["pytest>=8"]
