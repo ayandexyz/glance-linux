@@ -67,8 +67,31 @@ the shell's own lock have, but one you should read before relying on it.
 
 ## Install
 
-From PyPI, into a venv built from `packaging/glanced-0.3.6.lock`. That file
-pins every package in the dependency set -- all 28, `glanced` itself included
+```bash
+curl -fsSL https://www.glancelinux.website/install.sh | bash
+```
+
+That adds the plugin, installs the daemon with every package pinned by
+SHA-256, then sets up the service, PAM and lock screen -- one password prompt.
+Run it again to update. Then open the Glance panel and **Enroll**: your face,
+and a passphrase you choose.
+
+To take it all back out:
+
+```bash
+curl -fsSL https://www.glancelinux.website/uninstall.sh | bash
+```
+
+It removes `pam_glance` from the lock-screen PAM stacks before deleting the
+module (so no stack is left naming a missing one), restores the stock lock
+screen, stops and deletes the service, removes the plugin, and deletes
+`~/.local/share/glance` -- daemon, models, and your encrypted enrollment. It
+asks once before touching anything.
+
+### By hand
+
+What the installer does, step by step: from PyPI, into a venv built from
+`packaging/glanced-0.3.6.lock`. That file pins every package in the dependency set -- all 28, `glanced` itself included
 -- to one exact version and one exact SHA-256, and pip runs in hash-checking
 mode over the whole of it, so a substituted artifact fails the install instead
 of silently replacing the code the daemon runs. Wiring the lock screen
