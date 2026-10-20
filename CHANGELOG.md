@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.3.6 — 2026-10-20
+
+### Security
+- Recognition and liveness must now be satisfied by the same face. Both gates
+  accumulated across a scan independently, so a photo of the owner could earn
+  the match and a different, live person the liveness — in either order — and
+  unlock. The scan now follows one subject: losing the face, a jump in its
+  position, or an embedding that stops resembling the face it started as
+  resets both gates, and only a frame that itself matches can unlock. The
+  daemon computes an embedding every frame instead of stopping at the first
+  match.
+
+### Release
+- Published only by `.github/workflows/release.yml`: built from the version
+  tag with a hash-pinned toolchain (`packaging/build-requirements.lock`),
+  uploaded through PyPI Trusted Publishing with attestations, and reproducible
+  byte for byte from the tag. Workflow actions are pinned to commit SHAs.
+- `build/` is no longer tracked: a stale copy of the package sat there, five
+  modules behind `src/`.
+
 ## 0.3.5 — 2026-10-20
 
 ### Fixed

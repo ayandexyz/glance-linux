@@ -11,3 +11,7 @@ reference/
 
 # Build artifacts from `python -m build`.
 dist/
+
+# setuptools output. Never tracked: a wheel built in place would ship whatever
+# stale modules were left here.
+build/
