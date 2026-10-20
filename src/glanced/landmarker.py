@@ -7,11 +7,19 @@ real anti-spoof head — does not reach into the liveness code at all.
 
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
 import numpy as np
+
+# `import mediapipe` drags in its audio tasks, which import sounddevice, which
+# runs Pa_Initialize at import time. On a PipeWire system that opens a JACK
+# client, whose realtime-priority request can get the whole process SIGKILLed
+# before a single face is seen. Nothing here records audio, and MediaPipe
+# treats sounddevice as optional, so make its import fail cleanly.
+sys.modules.setdefault("sounddevice", None)
 
 from . import paths
 from .liveness.features import pitch_from_transformation_matrix, yaw_from_transformation_matrix
