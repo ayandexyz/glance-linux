@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.3.5 — 2026-10-20
+
+### Fixed
+- Enrollment no longer dies silently: mediapipe is capped below 1.0, whose
+  FaceLandmarker is SIGKILLed on construction (#1).
+- Guided enrollment judges face size in native pixels. On a 1280-wide camera
+  it asked for a face twice as large as intended and never advanced (#9, #7).
+- The gloss/glare cue no longer denies every real face: scattered glare can now
+  veto it, as the docstring always said (#10).
+- `enroll --gui` no longer aborts in protobuf when mediapipe is built on
+  TensorFlow: onnxruntime is loaded first (#5).
+- mediapipe no longer initialises PortAudio on import, which on PipeWire could
+  get the process killed before the camera opened (#6).
+
 ## 0.3.4 — 2026-09-23
 
 ### Fixed
