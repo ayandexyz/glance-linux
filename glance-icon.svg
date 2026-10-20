@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%" fill="none">
+  <defs>
+    <linearGradient id="glance-green" x1="64" y1="64" x2="448" y2="448" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#db650a"/>
+      <stop offset="100%" stop-color="#af5108"/>
+    </linearGradient>
+    <linearGradient id="glance-dark" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#121214"/>
+      <stop offset="100%" stop-color="#09090b"/>
+    </linearGradient>
+    <filter id="subtle-glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="0" stdDeviation="8" flood-color="#af5108" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+
+  <!-- Dark Obsidian Base (sharp Omarchy corners) -->
+  <rect width="512" height="512" fill="url(#glance-dark)"/>
+  <rect x="16" y="16" width="480" height="480" stroke="#27272a" stroke-width="2" fill="none"/>
+
+  <g filter="url(#subtle-glow)">
+    <!-- Biometric Corner Viewfinder Brackets (Sharp 90-degree) -->
+    <path d="M 72 152 V 72 H 152" stroke="url(#glance-green)" stroke-width="24" stroke-linecap="square" stroke-linejoin="miter"/>
+    <path d="M 360 72 H 440 V 152" stroke="url(#glance-green)" stroke-width="24" stroke-linecap="square" stroke-linejoin="miter"/>
+    <path d="M 72 360 V 440 H 152" stroke="url(#glance-green)" stroke-width="24" stroke-linecap="square" stroke-linejoin="miter"/>
+    <path d="M 360 440 H 440 V 360" stroke="url(#glance-green)" stroke-width="24" stroke-linecap="square" stroke-linejoin="miter"/>
+
+    <!-- Left Eye (Sharp biometric vertical slit / sensor) -->
+    <rect x="176" y="168" width="28" height="76" fill="url(#glance-green)"/>
+
+    <!-- Right Eye (Sharp biometric vertical slit / sensor) -->
+    <rect x="308" y="168" width="28" height="76" fill="url(#glance-green)"/>
+
+    <!-- Nose Bridge & Base (Signature Glance gesture) -->
+    <path d="M 276 172 L 236 288 H 276" stroke="url(#glance-green)" stroke-width="24" stroke-linecap="square" stroke-linejoin="miter"/>
+
+    <!-- Face Unlock Smile / Horizon Sensor Line (Architectural Omarchy Angle) -->
+    <path d="M 160 340 L 216 380 H 296 L 352 340" stroke="url(#glance-green)" stroke-width="24" stroke-linecap="square" stroke-linejoin="miter"/>
+
+    <!-- Subtle Target Crosshair Ticks -->
+    <line x1="256" y1="80" x2="256" y2="108" stroke="url(#glance-green)" stroke-width="8" stroke-linecap="square"/>
+    <line x1="256" y1="404" x2="256" y2="432" stroke="url(#glance-green)" stroke-width="8" stroke-linecap="square"/>
+    <line x1="80" y1="256" x2="108" y2="256" stroke="url(#glance-green)" stroke-width="8" stroke-linecap="square"/>
+    <line x1="404" y1="256" x2="432" y2="256" stroke="url(#glance-green)" stroke-width="8" stroke-linecap="square"/>
+  </g>
+</svg>

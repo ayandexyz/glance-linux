@@ -1,9 +1,13 @@
-# glance-linux
+<p align="center">
+  <img src="logo.png" alt="Glance logo" width="96">
+</p>
+
+<h1 align="center">glance-linux</h1>
 
 Face unlock for Linux, with the liveness detection that face-unlock on Linux
 usually doesn't have.
 
-![The lock screen's face unlock indicator and the Glance bar panel](plugin/preview.png)
+![The lock screen's face unlock indicator and the Glance bar panel](<image (online-video-cutter.com).gif>)
 
 A reimplementation of the liveness model from
 [Glance](https://github.com/jonnyoo/glance) (macOS, MIT) around a PAM-based
