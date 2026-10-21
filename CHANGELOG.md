@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- `glancectl setup-pam --sudo` lets a face authorize `sudo`, so a privileged
+  command can run without a password. The setuid path is opt-in and narrow: a
+  stack has to ask for it by name (`allow_setuid`), the PAM service has to be
+  `sudo`, the program talking to the module has to be `sudo` itself, there has
+  to be a controlling terminal, and `-n` is refused. Anything the module
+  declines falls through to the password. It is a different trade from the
+  lock screen — it hands over root — and `SECURITY.md` says what it costs.
+
 ## 0.3.6 — 2026-10-20
 
 ### Security

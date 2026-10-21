@@ -179,6 +179,21 @@ Lock the screen, press Enter (shell lock: any character then Enter), look at
 the camera. `pam/README.md` explains the two lock screens Omarchy has had, the
 on-demand vs `--hands-free` choice, and how to undo it.
 
+`glancectl setup-pam --sudo` goes one step further and lets a face authorize
+`sudo` itself:
+
+```
+$ sudo -k && sudo true
+Glance: look at the camera
+Glance: face verified
+```
+
+That is a different trade from the lock screen, which only asks whether to let
+you back into a session you already own. It is opt-in, it only ever answers a
+real `sudo` conversation at a terminal, and anything it declines falls through
+to your password — but it does put your face between a program that can run
+`sudo` and root. Read [SECURITY.md](SECURITY.md) before you turn it on.
+
 `enroll` walks you through five head directions — centre, then left, up,
 right and down — and takes two samples at each, gated on the yaw and pitch the
 landmarker reports rather than on you being asked nicely to move. That is what
