@@ -12,10 +12,18 @@ override LDFLAGS += -shared
 pam_glance.so: pam_glance.c
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $< -lpam
 
+# The decision helpers, tested directly. The source is included, because in a
+# PAM plugin they are static.
+test_glance_pam: test_glance_pam.c pam_glance.c
+	$(CC) $(CFLAGS) -o $@ $< -lpam
+
+test: test_glance_pam
+	./test_glance_pam
+
 install: pam_glance.so
 	install -Dm755 pam_glance.so $(DESTDIR)$(LIBDIR)/pam_glance.so
 
 clean:
-	rm -f pam_glance.so
+	rm -f pam_glance.so test_glance_pam
 
-.PHONY: install clean
+.PHONY: install clean test
