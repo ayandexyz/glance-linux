@@ -11,6 +11,22 @@
   declines falls through to the password. It is a different trade from the
   lock screen — it hands over root — and `SECURITY.md` says what it costs.
 
+### Fixed
+- The lock screen indicator is rebased onto Omarchy 4.5's lock plugin. The
+  files it installs were written against 4.0.3, and installing them over a
+  newer Omarchy replaced that version's lock plugin with the old one — the
+  newer upstream's fingerprint handling, video wallpaper and DPMS work went
+  with it. The diffs are regenerated against 4.5 as well, so "the wiring
+  alone" is current.
+- The face scan starts by itself, about a second after the screen locks,
+  instead of waiting for a keypress. The shell lock only hands anything to
+  PAM once its password field holds something, which made a face unlock read
+  as "type your password, and then the camera checks" — the face was the
+  second step instead of the first. It is one scan per lock, not a loop, and
+  `omarchy-shell lock faceAutoStart off` turns it off.
+- Enter on an empty password field asks for the scan. The field does not have
+  to hold a password for the camera to open.
+
 ## 0.3.6 — 2026-10-20
 
 ### Security
