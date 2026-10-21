@@ -19,8 +19,8 @@ PAIRS = [
     (ROOT / "pam" / "Makefile", PACKAGED / "pam" / "Makefile"),
 ]
 PAIRS += [
-    (source, PACKAGED / "lock-faceid" / source.name)
-    for source in sorted((ROOT / "patches" / "omarchy-lock-faceid").iterdir())
+    (source, PACKAGED / "lock-faceid" / source.relative_to(ROOT / "patches" / "omarchy-lock-faceid"))
+    for source in sorted((ROOT / "patches" / "omarchy-lock-faceid").rglob("*"))
     if source.is_file()
 ]
 PAIRS += [

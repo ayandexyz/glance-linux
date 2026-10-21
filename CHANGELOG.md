@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.3.8 — 2026-10-22
+
+### Fixed
+- The lock-screen indicator no longer breaks the lock screen on an Omarchy
+  version it wasn't rebased against. 0.3.7's `diffs/4.5/` patch depends on a
+  `ShellIpc` QML type that doesn't exist before 4.5, so installing it on
+  anything in the 4.0.x line failed the whole `omarchy.lock` service plugin to
+  load — not just face unlock, the lock screen's own backend. `apply.sh` now
+  ships one diff set per Omarchy baseline under `diffs/<version>/` and tries
+  each against a scratch copy of the live files, keeping the first one where
+  both diffs apply with zero rejected hunks, instead of assuming a version.
+  4.0.3's pre-4.5-rebase diff set is back as `diffs/4.0/` alongside `diffs/4.5/`.
+  An Omarchy too far from every shipped baseline is left on its own stock lock
+  screen rather than getting wiring the running shell can't load; face unlock
+  through PAM is unaffected either way.
+
 ## 0.3.7 — 2026-10-22
 
 ### Added

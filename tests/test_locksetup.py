@@ -25,7 +25,12 @@ def test_status_tracks_marker_and_hook(tmp_path, monkeypatch):
 def test_the_shipped_patch_carries_the_marker():
     source = locksetup._repo_patch_dir()
     assert source is not None
-    assert locksetup.MARKER in (source / "Service.qml").read_text()
+    diff_sets = list((source / "diffs").iterdir())
+    assert diff_sets, "no diff sets to apply"
+    for diff_set in diff_sets:
+        assert locksetup.MARKER in (diff_set / "Service.qml").read_text(), (
+            f"{diff_set} is missing the marker status() greps for"
+        )
     hook = source.parents[1] / "packaging" / "hooks" / locksetup.HOOK_NAME
     assert locksetup.MARKER in hook.read_text(), "the hook must grep for the same marker status() uses"
 

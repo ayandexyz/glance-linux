@@ -185,14 +185,25 @@ omarchy-shell lock hidePreview
 ## Files
 
 - `FaceUnlockIndicator.qml` — the capsule; self-contained, themed from `Color.lock`
-- `LockView.qml`, `Service.qml` — Omarchy's own lock plugin with the wiring in
-- `lockview.diff`, `service.diff` — the wiring alone, for the upstream PR
+- `diffs/<version>/` — one `lockview.diff` + `service.diff` pair per Omarchy
+  baseline this has been rebased against, plus the full `LockView.qml` /
+  `Service.qml` each was generated from, kept for re-diffing after the next
+  rebase. `apply.sh` does not pick one by version number: it tries each
+  `diffs/*/` in turn against a scratch copy of whatever is actually
+  installed, and keeps the first one where both diffs apply with zero
+  rejected hunks.
 
-The two QML files are Omarchy's lock plugin as of one version, with this
-project's face unlock wired into it, and `apply.sh` installs them wholesale.
-Installing them over a *newer* Omarchy would replace that version's lock
-plugin with this one — which is what happened when these were written against
-4.0.3 and installed on 4.5, taking the newer upstream's fingerprint handling,
-video wallpaper and DPMS work with it. The diffs apply cleanly to the version
-they were made against, so re-making them after an Omarchy update is a
-`diff -u` and a rebase rather than a rewrite.
+This used to be a single pinned version, installed wholesale — which is
+exactly the problem: written against 4.0.3 and installed on 4.5, it replaced
+4.5's lock plugin with 4.0.3's, taking the newer upstream's fingerprint
+handling, video wallpaper and DPMS work with it. A `diffs/4.5/` rebase then
+fixed 4.5 and broke 4.0.x the same way, in the other direction (4.5 depends on
+a `ShellIpc` QML type that does not exist in 4.0.x, so the whole lock service
+plugin fails to load — not just face unlock). Trying each diff set and
+keeping whichever one actually fits removes that pinning: an Omarchy close
+enough to any shipped baseline gets patched, and one too far from all of them
+is left on its own stock lock screen — face unlock still works through PAM
+either way, only the indicator doesn't — instead of installing wiring the
+running shell cannot load. Re-making a diff after an Omarchy update is still
+a `diff -u` against the new stock file, dropped into its own `diffs/<version>/`
+directory alongside the ones already there.

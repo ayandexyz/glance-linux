@@ -87,10 +87,17 @@ package() {
   # Omarchy update. Root-owned here is what lets the hook run them with a
   # non-interactive sudo; see src/glanced/locksetup.py.
   install -dm755 "$pkgdir/usr/share/$pkgname/lock-faceid"
-  install -m644 patches/omarchy-lock-faceid/{FaceUnlockIndicator.qml,LockView.qml,Service.qml,unlock-spin.png} \
+  install -m644 patches/omarchy-lock-faceid/{FaceUnlockIndicator.qml,unlock-spin.png} \
     "$pkgdir/usr/share/$pkgname/lock-faceid/"
   install -m755 patches/omarchy-lock-faceid/{apply.sh,revert.sh} \
     "$pkgdir/usr/share/$pkgname/lock-faceid/"
+  # One lockview.diff + service.diff pair per Omarchy baseline; apply.sh tries
+  # each against the live files and keeps whichever applies with no rejects.
+  for v in patches/omarchy-lock-faceid/diffs/*/; do
+    install -dm755 "$pkgdir/usr/share/$pkgname/lock-faceid/diffs/$(basename "$v")"
+    install -m644 "$v"/*.diff \
+      "$pkgdir/usr/share/$pkgname/lock-faceid/diffs/$(basename "$v")/"
+  done
   install -Dm755 packaging/hooks/repair-glance-lock.hook \
     "$pkgdir/usr/share/$pkgname/hooks/repair-glance-lock.hook"
 
