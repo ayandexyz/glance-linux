@@ -311,9 +311,9 @@ class AttentionTracker:
 
     @staticmethod
     def _default_landmarker():
-        from .landmarker import Landmarker
+        from .landmarker import create_landmarker
 
-        return Landmarker()
+        return create_landmarker()
 
     @staticmethod
     def _default_camera(device: str):

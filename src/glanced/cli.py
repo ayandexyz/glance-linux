@@ -103,7 +103,8 @@ def _fetch_model(args: argparse.Namespace) -> int:
     from . import models
 
     try:
-        models.fetch(args.variant, force=args.force, source=args.source)
+        models.fetch(args.variant, force=args.force, source=args.source,
+                     backend=None if args.landmarker == "auto" else args.landmarker)
     except models.ModelIntegrityError as error:
         print(f"fetch-model: {error}", file=sys.stderr)
         return 1
@@ -608,6 +609,8 @@ def main(argv: list[str] | None = None) -> int:
     fetch.add_argument("--variant", choices=["mbf", "r50"], default="mbf",
                        help="ArcFace backbone: mbf (13MB, default) or r50 (166MB, slower, a little more accurate)")
     fetch.add_argument("--force", action="store_true", help="re-download even if present and verified")
+    fetch.add_argument("--landmarker", choices=["auto", "mediapipe", "onnx", "all"], default="auto",
+                       help="which landmarker's files: the one this machine runs (auto), or another")
     fetch.add_argument("--from", dest="source", type=Path, default=None,
                        help="install from a directory holding the model files (sha256-checked) instead of downloading")
     fetch.set_defaults(func=_fetch_model)

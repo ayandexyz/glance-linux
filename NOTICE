@@ -13,3 +13,13 @@ The lock screen's success animation (patches/omarchy-lock-faceid/
 unlock-spin.png) is frames 16-45 of the unlock video shipped with Glance
 (Resources/unlockanimation.mp4), cut to the inside of its ring and reduced
 to an alpha mask so it can take the current theme's colour.
+
+The onnxruntime landmarker (src/glanced/landmarker_onnx.py) runs Google's
+MediaPipe BlazeFace short-range and Face Mesh V2 networks, taken unchanged
+from face_landmarker.task (float16/1) and converted from TFLite to ONNX
+(see packaging/MODELS.md). src/glanced/_data/face_geometry/ and
+packaging/face_geometry/ hold MediaPipe's geometry pipeline metadata, copied
+byte-for-byte. landmarker_onnx.py re-implements the behaviour of MediaPipe's
+FaceLandmarker graph (ROI rules, One-Euro landmark smoothing, geometry
+pipeline). Copyright 2023 The MediaPipe Authors, licensed under the Apache
+License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0

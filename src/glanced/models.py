@@ -1,8 +1,17 @@
-"""`glancectl fetch-model` — download the two neural networks the daemon needs.
+"""`glancectl fetch-model` — download the neural networks the daemon needs.
 
-Neither is vendored: the landmarker is Google's, the recognizer is
+None is vendored: the landmarker is Google's, the recognizer is
 InsightFace's, and both are large. They are fetched from their upstream
 release locations and dropped into `paths.MODEL_DIR`.
+
+Which landmarker files depends on the backend (`landmarker.backend()`):
+MediaPipe's `face_landmarker.task`, or for the onnxruntime backend
+`face_detector.onnx` and `face_landmarks.onnx`, the two networks inside that
+same task file converted from TFLite to ONNX (tf2onnx 1.17.0, opset 17; see
+`packaging/MODELS.md`). tf2onnx output is not byte-reproducible, so
+those two are published once as release assets and pinned by hash like
+everything else. The face geometry metadata the onnx backend also needs is
+small and ships inside the package.
 
 The ArcFace variants match upstream's `tools/convert_arcface.py`: `mbf` is the
 MobileFaceNet backbone from the `buffalo_s` pack (~13MB, fast on CPU) and is
@@ -68,6 +77,28 @@ LANDMARKER = ModelSpec(
     sha256="64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff",
     url=LANDMARKER_URL,
 )
+
+#: Where the converted ONNX networks are published. A release asset of this
+#: repository; $GLANCE_ONNX_MODELS_URL points at a mirror (the hashes below
+#: still decide what is accepted).
+ONNX_MODELS_URL = os.environ.get(
+    "GLANCE_ONNX_MODELS_URL", "https://github.com/ayandexyz/glance-linux/releases/download/models-v1"
+).rstrip("/")
+
+FACE_DETECTOR = ModelSpec(
+    name=paths.FACE_DETECTOR_NAME,
+    sha256="e3e5ec1d977e912482b4770aac7a5b4562c01630aaec72fcfab9171c8a5b0786",
+    url=f"{ONNX_MODELS_URL}/{paths.FACE_DETECTOR_NAME}",
+)
+FACE_MESH = ModelSpec(
+    name=paths.FACE_MESH_NAME,
+    sha256="0bc321f8fe70ad861e99fe878a7990dd52c89db902ea7d5bfb613898408244af",
+    url=f"{ONNX_MODELS_URL}/{paths.FACE_MESH_NAME}",
+    source_names=("face_landmarks_detector.onnx",),
+)
+
+#: geometry_pipeline_metadata_landmarks.binarypb, packaged in glanced/_data.
+GEOMETRY_SHA256 = "bdbcda96dfcb7da883da124aaa2c55dee49770d934f0fcc71747f8c21bdc75b4"
 
 ARCFACE_VARIANTS = {
     "mbf": ModelSpec(
@@ -238,18 +269,38 @@ def install(spec: ModelSpec, target: Path, *, sources: list[Path] = (), force: b
     )
 
 
+def _active_backend() -> str:
+    from .landmarker import backend
+
+    return backend()
+
+
+def landmarker_specs(backend: Optional[str] = None) -> list[ModelSpec]:
+    """The landmarker files `backend` (default: the active one) loads."""
+    backend = backend or _active_backend()
+    if backend == "mediapipe":
+        return [LANDMARKER]
+    if backend == "onnx":
+        return [FACE_DETECTOR, FACE_MESH]
+    raise ValueError(f"unknown landmarker backend {backend!r}")
+
+
 def fetch(
     variant: str = DEFAULT_VARIANT,
     *,
     force: bool = False,
     model_dir: Path = paths.MODEL_DIR,
     source: Optional[Path] = None,
+    backend: Optional[str] = None,
 ) -> None:
-    """Install the landmarker and ArcFace into `model_dir`, verified. Raises
+    """Install the landmarker for `backend` (default: the active one; "all"
+    for both) and ArcFace into `model_dir`, verified. Raises
     ModelIntegrityError when a model cannot be had with the pinned bytes."""
     sources = source_dirs(source)
     model_dir = Path(model_dir)
-    install(LANDMARKER, model_dir / LANDMARKER.name, sources=sources, force=force, label="landmarker")
+    specs = [LANDMARKER, FACE_DETECTOR, FACE_MESH] if backend == "all" else landmarker_specs(backend)
+    for spec in specs:
+        install(spec, model_dir / spec.name, sources=sources, force=force, label=spec.name)
 
     arcface = ARCFACE_VARIANTS[variant]
     target = model_dir / arcface.name
@@ -259,10 +310,24 @@ def fetch(
     install(arcface, target, sources=sources, force=force, label="ArcFace model")
 
 
+#: Model file -> the `paths` function that says where it is loaded from.
+_SPEC_PATHS = {
+    paths.LANDMARKER_NAME: "landmarker_task",
+    paths.FACE_DETECTOR_NAME: "face_detector_model",
+    paths.FACE_MESH_NAME: "face_mesh_model",
+}
+
+
 def status() -> dict[str, bool]:
-    """Present *and* matching its pin."""
+    """Present *and* matching its pin. `landmarker` means every file the
+    active backend loads."""
+    try:
+        specs = landmarker_specs()
+    except ValueError:
+        specs = []
     return {
-        "landmarker": is_valid(paths.landmarker_task(), LANDMARKER.sha256),
+        "landmarker": bool(specs) and all(
+            is_valid(getattr(paths, _SPEC_PATHS[s.name])(), s.sha256) for s in specs),
         "arcface": is_valid(paths.arcface_model(), ARCFACE_HASHES),
     }
 

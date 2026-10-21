@@ -116,6 +116,13 @@ python -m pip install --dry-run --ignore-installed \
     --report report.json 'glanced[runtime,gui]==0.3.9'
 ```
 
+On Linux aarch64 (Apple Silicon Macs under Asahi Linux, ARM laptops)
+MediaPipe has no wheel, so it is not installed there and the landmarker runs
+the same BlazeFace and Face Mesh networks on onnxruntime instead
+(`glanced/landmarker_onnx.py`, measured against MediaPipe's own output in
+`tests/test_landmarker_onnx.py`). `fetch-model` picks the matching files by
+itself; `GLANCE_LANDMARKER=onnx` tries that backend on x86_64 too.
+
 `pipx install 'glanced[runtime,gui]'` is still a perfectly ordinary way to
 install this, and puts `glancectl` on your PATH. It resolves the dependency
 floors below to whatever is newest that day, though, so two people running the

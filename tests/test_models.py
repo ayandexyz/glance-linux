@@ -32,6 +32,7 @@ def fake_specs(monkeypatch):
     monkeypatch.setattr(models, "ARCFACE_VARIANTS", {"mbf": spec})
     monkeypatch.setattr(models, "ARCFACE_HASHES", frozenset({spec.sha256}))
     monkeypatch.delenv("GLANCE_MODEL_SOURCE", raising=False)
+    monkeypatch.setenv("GLANCE_LANDMARKER", "mediapipe")
     models._hash_cache.clear()
     return blobs, archive_bytes
 
@@ -165,7 +166,7 @@ def test_the_embedder_refuses_an_unpinned_model(tmp_path):
 
 
 def test_the_pins_are_well_formed():
-    specs = [models.LANDMARKER, *models.ARCFACE_VARIANTS.values()]
+    specs = [models.LANDMARKER, models.FACE_DETECTOR, models.FACE_MESH, *models.ARCFACE_VARIANTS.values()]
     for spec in specs:
         assert len(spec.sha256) == 64 and int(spec.sha256, 16) >= 0
         assert (spec.url is None) != (spec.archive is None)
