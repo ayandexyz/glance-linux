@@ -140,7 +140,9 @@ that step.
 
 `install-service` fetches the models if they are missing and writes the same
 unit `packaging/install.sh` does, pointed at the `glancectl` that is running
-it, so it works from pipx, a venv or a checkout. `--no-fetch` skips the
+it, so it works from pipx, a venv or a checkout. It also links that `glancectl` into
+`~/.local/bin` (or `$XDG_BIN_HOME`), so the venv's binary answers at a prompt;
+an existing `glancectl` there that is not a link to it is left alone. `--no-fetch` skips the
 download; `--remove` takes the whole thing back out.
 
 An AUR package is written and waiting in `packaging/aur/` — the PKGBUILD and

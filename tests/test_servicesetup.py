@@ -159,3 +159,66 @@ def test_missing_binary_is_an_error(tmp_path, monkeypatch, systemctl, capsys):
 
     assert servicesetup.setup() == 1
     assert "cannot find" in capsys.readouterr().err
+
+
+# --- the ~/.local/bin link ------------------------------------------------------
+
+
+def _venv_binary(tmp_path):
+    binary = tmp_path / "venv" / "bin" / "glancectl"
+    binary.parent.mkdir(parents=True)
+    binary.write_text("#!/bin/sh\n")
+    binary.chmod(0o755)
+    return binary
+
+
+def test_setup_links_glancectl_onto_the_path(tmp_path, monkeypatch, systemctl, capsys):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    monkeypatch.setenv("XDG_BIN_HOME", str(tmp_path / "localbin"))
+    binary = _venv_binary(tmp_path)
+    monkeypatch.setattr(servicesetup, "glancectl_path", lambda: binary)
+
+    assert servicesetup.setup() == 0
+    link = tmp_path / "localbin" / "glancectl"
+    assert link.is_symlink() and link.resolve() == binary.resolve()
+    assert "not on your PATH" in capsys.readouterr().out
+
+    # Idempotent, and quiet about PATH once it is there.
+    monkeypatch.setenv("PATH", str(tmp_path / "localbin"))
+    assert servicesetup.setup() == 0
+    assert "not on your PATH" not in capsys.readouterr().out
+
+    assert servicesetup.setup(remove=True) == 0
+    assert not link.exists() and not link.is_symlink()
+
+
+def test_the_link_never_replaces_someone_elses_glancectl(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_BIN_HOME", str(tmp_path / "localbin"))
+    ours = _venv_binary(tmp_path)
+    pipx = tmp_path / "pipx" / "glancectl"
+    pipx.parent.mkdir()
+    pipx.write_text("#!/bin/sh\n")
+    link = tmp_path / "localbin" / "glancectl"
+    link.parent.mkdir()
+    link.symlink_to(pipx)
+
+    assert servicesetup.link_on_path(ours) is None
+    assert link.resolve() == pipx.resolve()
+    servicesetup.unlink_from_path(ours)
+    assert link.is_symlink(), "remove must not take away a link it did not make"
+
+    link.unlink()
+    link.write_text("#!/bin/sh\n# a wrapper someone wrote\n")
+    assert servicesetup.link_on_path(ours) is None
+    assert "wrapper" in link.read_text()
+
+
+def test_a_dangling_link_from_an_old_venv_is_replaced(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_BIN_HOME", str(tmp_path / "localbin"))
+    ours = _venv_binary(tmp_path)
+    link = tmp_path / "localbin" / "glancectl"
+    link.parent.mkdir()
+    link.symlink_to(tmp_path / "gone" / "glancectl")
+
+    assert servicesetup.link_on_path(ours) == link
+    assert link.resolve() == ours.resolve()
