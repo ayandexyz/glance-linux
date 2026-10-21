@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.7 — 2026-10-22
 
 ### Added
 - `glancectl setup-pam --sudo` lets a face authorize `sudo`, so a privileged
