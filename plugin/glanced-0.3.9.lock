@@ -1,12 +1,12 @@
-# glanced 0.3.8 runtime+gui, fully pinned with hashes.
+# glanced 0.3.9 runtime+gui, fully pinned with hashes.
 #
 # Generated with:
 #   python3 -m pip install --dry-run --ignore-installed \
-#       --report report.json 'glanced[runtime,gui]==0.3.8'
+#       --report report.json 'glanced[runtime,gui]==0.3.9'
 #
-# 0.3.8 changed no dependency, so this is the 0.3.7 lock with only the glanced
+# 0.3.9 changed no dependency, so this is the 0.3.8 lock with only the glanced
 # line replaced: every other package is the same version and hash as before.
-# The glanced wheel is the one release.yml built from tag v0.3.8, attested by
+# The glanced wheel is the one release.yml built from tag v0.3.9, attested by
 # PyPI and GitHub, and reproducible from that tag.
 #
 # One hash per package: the exact wheel and nothing else. pip runs in
@@ -33,8 +33,8 @@ flatbuffers==25.12.19 \
     --hash=sha256:7634f50c427838bb021c2d66a3d1168e9d199b0607e6329399f04846d42e20b4
 fonttools==4.67.0 \
     --hash=sha256:916836845e4b1c1447bb61390ffb3cb5f2940fd9f5d6de4685539a81806c7764
-glanced==0.3.8 \
-    --hash=sha256:971fa19e5925e148ece336fa2f4ab920c4eb3b3defe89614e5595cce12c3af18
+glanced==0.3.9 \
+    --hash=sha256:3777c2fe8338e0a61d96bf4e76ba15c9ca000f90b482ca191be605af1c3e08ac
 kiwisolver==1.5.1 \
     --hash=sha256:18a0cfb124546a4c2e6087c5f3029c7f44b37c85b142e0ced71f73a7599ac208
 matplotlib==3.11.2 \

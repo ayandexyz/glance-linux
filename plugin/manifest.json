@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "io.github.ayandexyz.glance",
   "name": "Glance Face Unlock",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "author": "Ayan De",
   "license": "MIT",
   "description": "Face unlock with liveness detection: armed state, enrolled identities, the last scan's verdict, and a test scan, in a native Omarchy bar panel.",
@@ -42,7 +42,7 @@
         "type": "string",
         "label": "glancectl path",
         "defaultValue": "",
-        "description": "Optional. Absolute path to glancectl. Left empty, the panel uses ~/.local/share/glance/bin/glancectl -- the venv built from glanced-0.3.8.lock, which pins all 30 packages to exact versions and SHA-256 hashes. That is the only location it will pick on its own: a pipx install, a distribution package or a source checkout resolves a dependency set nobody has reviewed, so it has to be named here deliberately rather than discovered. Whatever the path, it is checked before every run: no symlinks, every directory and the file owned by you or root and writable by nobody else, the file regular and executable, and the same file (device, inode, size, mtime) the previous run was checked against. It is then executed as the object that check accepted -- opened once and exec'd as that descriptor -- not by resolving the path again. Note what that does and does not cover: it binds the local file between check and execution, not which package versions sit behind it."
+        "description": "Optional. Absolute path to glancectl. Left empty, the panel uses ~/.local/share/glance/bin/glancectl -- the venv built from glanced-0.3.9.lock, which pins all 30 packages to exact versions and SHA-256 hashes. That is the only location it will pick on its own: a pipx install, a distribution package or a source checkout resolves a dependency set nobody has reviewed, so it has to be named here deliberately rather than discovered. Whatever the path, it is checked before every run: no symlinks, every directory and the file owned by you or root and writable by nobody else, the file regular and executable, and the same file (device, inode, size, mtime) the previous run was checked against. It is then executed as the object that check accepted -- opened once and exec'd as that descriptor -- not by resolving the path again. Note what that does and does not cover: it binds the local file between check and execution, not which package versions sit behind it."
       }
     ]
   }

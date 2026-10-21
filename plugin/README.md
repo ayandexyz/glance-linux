@@ -105,7 +105,7 @@ you, and prints the command under every button so you can see what that is.
 Wiring the lock screen compiles a small PAM module, so `base-devel` and `pam`
 need to be there — `setup` says so if they are not.
 
-The daemon is installed from `glanced-0.3.8.lock` in this repository, which
+The daemon is installed from `glanced-0.3.9.lock` in this repository, which
 pins **every** package in the dependency set — all 30 of them, `glanced`
 itself included — to one exact version and one exact SHA-256. pip runs in
 hash-checking mode over the whole file, so a substituted or tampered artifact
@@ -129,7 +129,7 @@ download, and no trusting a URL that could answer differently tomorrow:
 omarchy plugin add https://github.com/ayandexyz/omarchy-glance.git --enable
 python -m venv ~/.local/share/glance
 ~/.local/share/glance/bin/pip install --require-hashes \
-    -r ~/.config/omarchy/plugins/io.github.ayandexyz.glance/glanced-0.3.8.lock
+    -r ~/.config/omarchy/plugins/io.github.ayandexyz.glance/glanced-0.3.9.lock
 ~/.local/share/glance/bin/glancectl setup
 ```
 

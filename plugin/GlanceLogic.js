@@ -9,7 +9,7 @@
 // or `glancectl` earlier on an inherited PATH would otherwise run in place of
 // the real one, on the way to the interactive PAM setup step.
 // Where the locked install in the README puts the binary: a plain venv built
-// from `glanced-0.3.8.lock`, every package in it pinned to one version and one
+// from `glanced-0.3.9.lock`, every package in it pinned to one version and one
 // SHA-256. It is the only path the panel will pick on its own.
 var LOCKED_GLANCECTL_SUFFIX = "/.local/share/glance/bin/glancectl"
 var SYSTEMCTL = "/usr/bin/systemctl"
