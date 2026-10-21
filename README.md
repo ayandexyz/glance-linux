@@ -162,7 +162,7 @@ For hacking on it, or to run the tests:
 ```bash
 python -m venv .venv && .venv/bin/pip install -e '.[runtime,gui,dev]'
 .venv/bin/python -m pytest                   # no camera needed
-.venv/bin/glancectl fetch-model              # ~3MB landmarker + ~13MB ArcFace
+.venv/bin/glancectl fetch-model              # ~3MB landmarker + ~13MB ArcFace, sha256-pinned
 .venv/bin/glancectl live --mode heavy        # liveness against your webcam, no unlock
 ```
 

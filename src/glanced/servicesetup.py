@@ -156,9 +156,11 @@ def _systemctl(*args: str) -> None:
 
 
 def models_present() -> bool:
-    from . import paths
+    """On disk and matching their pinned hashes."""
+    from . import models
 
-    return paths.landmarker_task().exists() and paths.arcface_model().exists()
+    status = models.status()
+    return status["landmarker"] and status["arcface"]
 
 
 def setup(
@@ -190,7 +192,11 @@ def setup(
         from . import models
 
         print("fetching the models (~16MB), one time only")
-        models.fetch()
+        try:
+            models.fetch()
+        except models.ModelIntegrityError as error:
+            print(f"install-service: {error}", file=sys.stderr)
+            return 1
 
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(render_unit(exec_start, mode))

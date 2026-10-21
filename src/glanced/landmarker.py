@@ -21,7 +21,7 @@ import numpy as np
 # treats sounddevice as optional, so make its import fail cleanly.
 sys.modules.setdefault("sounddevice", None)
 
-from . import paths
+from . import models, paths
 from .liveness.features import pitch_from_transformation_matrix, yaw_from_transformation_matrix
 
 #: The five points ArcFace alignment expects, as FaceMesh indices:
@@ -63,11 +63,7 @@ class Landmarker:
         from mediapipe.tasks.python import BaseOptions, vision
 
         self.task_path = Path(task_path or paths.landmarker_task())
-        if not self.task_path.exists():
-            raise FileNotFoundError(
-                f"face_landmarker.task not found at {self.task_path}. "
-                "Fetch it with `glancectl fetch-model`."
-            )
+        models.verify(self.task_path, models.LANDMARKER.sha256, "face_landmarker.task")
         self._landmarker = vision.FaceLandmarker.create_from_options(
             vision.FaceLandmarkerOptions(
                 base_options=BaseOptions(model_asset_path=str(self.task_path)),

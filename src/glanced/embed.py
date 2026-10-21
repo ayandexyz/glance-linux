@@ -23,14 +23,11 @@ class ArcFaceEmbedder:
     def __init__(self, model_path: Optional[Path] = None, providers: Optional[list[str]] = None) -> None:
         import onnxruntime  # imported lazily so the liveness code stays importable without it
 
-        from . import paths
+        from . import models, paths
 
         self.model_path = Path(model_path or paths.arcface_model())
-        if not self.model_path.exists():
-            raise FileNotFoundError(
-                f"ArcFace model not found at {self.model_path}. "
-                "Fetch it with `glancectl fetch-model`."
-            )
+        # Missing or not one of the pinned ArcFace builds: refuse to load it.
+        models.verify(self.model_path, models.ARCFACE_HASHES, "ArcFace model")
         self.session = onnxruntime.InferenceSession(
             str(self.model_path), providers=providers or ["CPUExecutionProvider"]
         )

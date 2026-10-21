@@ -102,7 +102,11 @@ def _emit(args: argparse.Namespace, payload: dict, *, human) -> None:
 def _fetch_model(args: argparse.Namespace) -> int:
     from . import models
 
-    models.fetch(args.variant, force=args.force)
+    try:
+        models.fetch(args.variant, force=args.force, source=args.source)
+    except models.ModelIntegrityError as error:
+        print(f"fetch-model: {error}", file=sys.stderr)
+        return 1
     return 0
 
 
@@ -603,7 +607,9 @@ def main(argv: list[str] | None = None) -> int:
     fetch = subparsers.add_parser("fetch-model", help="download the landmarker and ArcFace models")
     fetch.add_argument("--variant", choices=["mbf", "r50"], default="mbf",
                        help="ArcFace backbone: mbf (13MB, default) or r50 (166MB, slower, a little more accurate)")
-    fetch.add_argument("--force", action="store_true", help="re-download even if present")
+    fetch.add_argument("--force", action="store_true", help="re-download even if present and verified")
+    fetch.add_argument("--from", dest="source", type=Path, default=None,
+                       help="install from a directory holding the model files (sha256-checked) instead of downloading")
     fetch.set_defaults(func=_fetch_model)
 
     enroll = subparsers.add_parser("enroll", help="capture your face into the encrypted store")
