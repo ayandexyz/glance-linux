@@ -21,6 +21,28 @@ hook only notifies; the daemon's status (and the bar panel) shows whether the
 patch is currently applied either way. `glancectl setup-lock --remove` runs
 `revert.sh` and drops the hook.
 
+## When the scan starts
+
+The shell lock only hands anything to PAM once its password field holds
+something, so a scan that waits for a keypress reads as "type your password,
+and *then* the camera checks" — the face is the second step instead of the
+first. The password was never actually checked: the scan answers first and
+the stack ends there.
+
+So the patch does two things about that:
+
+- **The scan starts by itself**, about a second after the screen locks. The
+  camera opens once, the capsule drops in, and the session comes back. This
+  is one scan per lock, not the loop that `--hands-free` is: the camera does
+  not stay on for as long as the screen stays locked, and a failed scan falls
+  through to the password exactly as before. `omarchy-shell lock
+  faceAutoStart off` turns it off.
+- **Enter on an empty field asks for the scan.** The field does not have to
+  hold a password for the camera to open. A line under the field says so,
+  while the PAM stack really carries the module — and it goes away as soon as
+  PAM is waiting for a password, because by then the field wants a password
+  and not another scan.
+
 ## How it knows a scan is happening
 
 `pam_glance` sends a PAM info message (`Glance: look at the camera`) before it
@@ -163,5 +185,14 @@ omarchy-shell lock hidePreview
 ## Files
 
 - `FaceUnlockIndicator.qml` — the capsule; self-contained, themed from `Color.lock`
-- `LockView.qml`, `Service.qml` — the installed 4.0.3 files plus the wiring
+- `LockView.qml`, `Service.qml` — Omarchy's own lock plugin with the wiring in
 - `lockview.diff`, `service.diff` — the wiring alone, for the upstream PR
+
+The two QML files are Omarchy's lock plugin as of one version, with this
+project's face unlock wired into it, and `apply.sh` installs them wholesale.
+Installing them over a *newer* Omarchy would replace that version's lock
+plugin with this one — which is what happened when these were written against
+4.0.3 and installed on 4.5, taking the newer upstream's fingerprint handling,
+video wallpaper and DPMS work with it. The diffs apply cleanly to the version
+they were made against, so re-making them after an Omarchy update is a
+`diff -u` and a rebase rather than a rewrite.

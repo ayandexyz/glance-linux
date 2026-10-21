@@ -1,7 +1,7 @@
 --- /usr/share/omarchy/shell/plugins/lock/LockView.qml
 +++ LockView.qml
-@@ -16,6 +16,11 @@
-   property bool loadBackground: true
+@@ -24,6 +24,18 @@
+   property bool powerSaverActive: false
    property string passwordText: ""
    property bool syncingPasswordText: false
 +  // Face unlock indicator (see FaceUnlockIndicator.qml): hidden | scanning |
@@ -9,10 +9,17 @@
 +  // conversation, so the view knows nothing about which module is scanning.
 +  property string faceState: "hidden"
 +  property string faceMessage: ""
++  // Whether the lock's PAM stack carries the face module at all. Without it
++  // there is nothing to promise, so the hint is not drawn.
++  property bool faceUnlockAvailable: false
++  // Whether PAM is waiting for a password. It is, once the scan has had its
++  // turn and did not recognise anyone — and then the field wants a password,
++  // not another scan, so the hint that promises one is taken away.
++  property bool facePasswordPrompt: false
  
-   readonly property string placeholderText: "Enter Password"
+   readonly property string placeholderText: Commons.I18n.t("lock.enterPassword")
    readonly property int fieldWidth: 381
-@@ -119,6 +124,12 @@
+@@ -152,6 +164,29 @@
        onPositionChanged: root.wakeRequested()
      }
  
@@ -22,6 +29,35 @@
 +      topMargin: Math.round(parent.height * 0.07)
 +    }
 +
++    // The scan runs before the password prompt, so the field is not the only
++    // way in. Said here, or the only way to find out is to type a password
++    // and watch the camera open after it.
++    Text {
++      objectName: "faceUnlockHint"
++      textFormat: Text.PlainText
++      anchors.bottom: inputField.top
++      anchors.bottomMargin: 18
++      anchors.horizontalCenter: inputField.horizontalCenter
++      visible: root.faceUnlockAvailable && root.faceState !== "scanning" && !root.facePasswordPrompt
++      text: Commons.I18n.t("lock.faceUnlockHint", "Press Enter to unlock with your face")
++      color: Commons.Color.lock.placeholder
++      font.family: Style.font.family
++      font.pixelSize: Style.font.heading
++      horizontalAlignment: Text.AlignHCenter
++    }
++
      BorderSurface {
        id: inputField
        width: root.fieldWidth
+@@ -204,7 +239,10 @@
+         onAccepted: {
+           var submitted = root.passwordText
+           root.passwordTextEdited("")
+-          if (submitted.length > 0) root.submitPassword(submitted)
++          // An empty field is not a refusal: the stack tries the face scan
++          // before the password, so Enter on an empty field is the request
++          // for that scan.
++          root.submitPassword(submitted)
+         }
+ 
+         Keys.onPressed: function(event) {
