@@ -9,7 +9,7 @@
 // or `glancectl` earlier on an inherited PATH would otherwise run in place of
 // the real one, on the way to the interactive PAM setup step.
 // Where the locked install in the README puts the binary: a plain venv built
-// from `glanced-0.3.6.lock`, every package in it pinned to one version and one
+// from `glanced-0.3.7.lock`, every package in it pinned to one version and one
 // SHA-256. It is the only path the panel will pick on its own.
 var LOCKED_GLANCECTL_SUFFIX = "/.local/share/glance/bin/glancectl"
 var SYSTEMCTL = "/usr/bin/systemctl"
@@ -406,7 +406,7 @@ function parseActionResult(stdout, stderr, exitCode) {
 // resolves the `>=` floors in glanced's metadata afresh, and there is no
 // published package behind /usr/bin. The ownership and inode checks bind a
 // local file between the check and the exec -- they say nothing about which
-// versions of 28 packages are sitting behind it.
+// versions of 30 packages are sitting behind it.
 //
 // So a glancectl installed any other way has to be named in the settings. That
 // is the point: an unpinned daemon is then something the user chose and can

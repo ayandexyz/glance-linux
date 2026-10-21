@@ -1,0 +1,81 @@
+# glanced 0.3.7 runtime+gui, fully pinned with hashes.
+#
+# Generated with:
+#   python3 -m pip install --dry-run --ignore-installed \
+#       --report report.json 'glanced[runtime,gui]==0.3.7'
+#
+# Two days separate this from the 0.3.6 lock, and ten packages moved in that
+# window -- PySide6 6.11.2 to 6.12.0 brought two new transitive deps with it
+# (PySide6_Pdf, PySide6_WebEngine), so the set is 30 packages, not 28. This is
+# a full relock, not a one-line swap. The glanced wheel is the one release.yml
+# built from tag v0.3.7, attested by PyPI and GitHub, and reproducible from
+# that tag.
+#
+# One hash per package: the exact wheel and nothing else. pip runs in
+# hash-checking mode for the whole set, so an unpinned or substituted
+# dependency is a hard failure rather than a silent upgrade.
+#
+# Platform: CPython 3.14 on x86_64 Linux, which is what Omarchy ships.
+# Another interpreter or architecture needs its own regeneration -- the
+# wheels differ, so their hashes do too.
+
+absl-py==2.5.1 \
+    --hash=sha256:721200f2f0e9960f2ca9dc3a2a706b201f5f75d812c158f059cbbe29eeafbdb8
+certifi==2026.10.19 \
+    --hash=sha256:42d35340cc5b9ba78e818ddbff0c5b1c2b779de448a340fd1b989f5fa8670e1b
+cffi==2.1.1 \
+    --hash=sha256:b0431303acaea1089ad4b3e9ce4e6518193def1118d4073ca848635ee4ea2e96
+contourpy==1.4.0 \
+    --hash=sha256:e439ab450c93455feb0218532ded3e946ec7a9b5f459069f122cfa44b89229f6
+cryptography==50.0.2 \
+    --hash=sha256:9dab55f57c74c3cad24c323bacbbd04be4705ba6eb0d92e920b1fc4837ed5079
+cycler==0.12.1 \
+    --hash=sha256:85cef7cff222d8644161529808465972e51340599459b8ac3ccbac5a854e0d30
+flatbuffers==25.12.19 \
+    --hash=sha256:7634f50c427838bb021c2d66a3d1168e9d199b0607e6329399f04846d42e20b4
+fonttools==4.67.0 \
+    --hash=sha256:916836845e4b1c1447bb61390ffb3cb5f2940fd9f5d6de4685539a81806c7764
+glanced==0.3.7 \
+    --hash=sha256:f0a264e31879e434d260bd49236222b0e9d76d021c7438c3a76565fd29dd4b50
+kiwisolver==1.5.1 \
+    --hash=sha256:18a0cfb124546a4c2e6087c5f3029c7f44b37c85b142e0ced71f73a7599ac208
+matplotlib==3.11.2 \
+    --hash=sha256:8c8255de28f986d935a64c9ca71c0ec2d2f41d355691f5ea684725dc91413f71
+mediapipe==0.10.35 \
+    --hash=sha256:db9a579df48cffe9570cd3e93f6a5d2dd089a1103b846c60c5b5de8a21c38db0
+numpy==2.5.4 \
+    --hash=sha256:d549420b8858885cea8838a727842249218b9c1da24dd517e25c9c7a948310a3
+onnxruntime==1.31.0 \
+    --hash=sha256:e4efa4a1a0bb0b5173c6a3292c181d518b8323f9d56e978635d0c09d38c94d1a
+opencv-contrib-python==5.0.0.93 \
+    --hash=sha256:8427dcb0561dc3ba32f3771c627f52b87c29932c265bea28ffcb54804c3c3fec
+opencv-python==5.0.0.93 \
+    --hash=sha256:c8de2dec111122a02e8beb28e16c31904992dfd6186560b142a92c71403c1039
+packaging==26.3 \
+    --hash=sha256:d7193f7c8e4e93f444fde0262bf90af30e16fa0ad0ad44cb553c87339b23cd1c
+pillow==13.0.0 \
+    --hash=sha256:e91c2b1cbeae768c98752e67e717e283d68dae45717b41f2d91eaee648e37b7d
+protobuf==7.36.2 \
+    --hash=sha256:89f23aa53c24553a2416fd4fd1ec06f74fa42b14b546d8883128813f775bbfd2
+pycparser==3.11 \
+    --hash=sha256:51d5a8ba2be0bbe440b99d2112604c95bbbc3c2748a64260186c541e1729cd80
+pyparsing==3.3.3 \
+    --hash=sha256:ece8c00a69cf01b45d0b1dedabb469c90d8caf996d4fda40f147627a122849a4
+PySide6==6.12.0 \
+    --hash=sha256:d13ed4d0053cc20f3e4e0fdbf12790a9b7f958d7e22c0843411ecfa8c799e2a9
+PySide6_Addons==6.12.0 \
+    --hash=sha256:4ab38c0017f0453671a9313d3a53ca1c0e378924f54b07e596bcea94a9642391
+PySide6_Essentials==6.12.0 \
+    --hash=sha256:16f4b5e41daf49235ae048458243da9efe5f3d8040f9cc5aa454ce69893d3bd9
+PySide6_Pdf==6.12.0.140 \
+    --hash=sha256:0c94370b6b9d65fbfe54f9d6d25df0677db0cdcfd0a842a63958a3603a42007c
+PySide6_WebEngine==6.12.0.140 \
+    --hash=sha256:c041c9921d7c91c9e51a2c027f434d05c3c59baa2c8f17b71dc8194e77791f06
+python-dateutil==2.9.0.post0 \
+    --hash=sha256:a8b2bc7bffae282281c8140a97d3aa9c14da0b136dfe83f850eea9a5f7470427
+shiboken6==6.12.0 \
+    --hash=sha256:3bde565bb0890044b5c7f63808adddede5abc241e9395a2bfed61919884d6240
+six==1.17.0 \
+    --hash=sha256:4721f391ed90541fddacab5acf947aa0d3dc7d27b2e1e8eda2be8970586c3274
+sounddevice==0.5.6 \
+    --hash=sha256:de099612311ad81e55d31ccbd83f43ea6bf4d87b48f9b6ea55a1fbcde0eee4e0

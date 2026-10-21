@@ -105,8 +105,8 @@ you, and prints the command under every button so you can see what that is.
 Wiring the lock screen compiles a small PAM module, so `base-devel` and `pam`
 need to be there — `setup` says so if they are not.
 
-The daemon is installed from `glanced-0.3.6.lock` in this repository, which
-pins **every** package in the dependency set — all 28 of them, `glanced`
+The daemon is installed from `glanced-0.3.7.lock` in this repository, which
+pins **every** package in the dependency set — all 30 of them, `glanced`
 itself included — to one exact version and one exact SHA-256. pip runs in
 hash-checking mode over the whole file, so a substituted or tampered artifact
 is a hard failure rather than a silent upgrade.
@@ -129,7 +129,7 @@ download, and no trusting a URL that could answer differently tomorrow:
 omarchy plugin add https://github.com/ayandexyz/omarchy-glance.git --enable
 python -m venv ~/.local/share/glance
 ~/.local/share/glance/bin/pip install --require-hashes \
-    -r ~/.config/omarchy/plugins/io.github.ayandexyz.glance/glanced-0.3.6.lock
+    -r ~/.config/omarchy/plugins/io.github.ayandexyz.glance/glanced-0.3.7.lock
 ~/.local/share/glance/bin/glancectl setup
 ```
 
@@ -141,7 +141,7 @@ because the check above refuses both.
 
 That single default is deliberate. The panel used to try `/usr/bin/glancectl`
 first and fall back to a pipx venv, which meant it could silently pick a daemon
-whose 28 dependencies had resolved to whatever was newest that day — and its
+whose 30 dependencies had resolved to whatever was newest that day — and its
 buttons lead to `setup-pam`, which edits `/etc/pam.d` under `sudo`. Choosing
 that on your behalf is not the plugin's call to make. An install done any other
 way still works perfectly well; it just has to be named in the settings, where
@@ -175,7 +175,7 @@ the only one the panel will find by itself.
 
 And the limit of the per-run check, said plainly: it establishes that the file
 the panel `stat`ed is the file it `exec`s, which closes the swap-between-check-
-and-use race. It says nothing about which versions of those 28 packages sit
+and-use race. It says nothing about which versions of those 30 packages sit
 behind that file. Only the lock does that, which is why the default location is
 the locked venv and not a discovery order.
 
