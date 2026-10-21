@@ -1,15 +1,13 @@
-# glanced 0.3.7 runtime+gui, fully pinned with hashes.
+# glanced 0.3.8 runtime+gui, fully pinned with hashes.
 #
 # Generated with:
 #   python3 -m pip install --dry-run --ignore-installed \
-#       --report report.json 'glanced[runtime,gui]==0.3.7'
+#       --report report.json 'glanced[runtime,gui]==0.3.8'
 #
-# Two days separate this from the 0.3.6 lock, and ten packages moved in that
-# window -- PySide6 6.11.2 to 6.12.0 brought two new transitive deps with it
-# (PySide6_Pdf, PySide6_WebEngine), so the set is 30 packages, not 28. This is
-# a full relock, not a one-line swap. The glanced wheel is the one release.yml
-# built from tag v0.3.7, attested by PyPI and GitHub, and reproducible from
-# that tag.
+# 0.3.8 changed no dependency, so this is the 0.3.7 lock with only the glanced
+# line replaced: every other package is the same version and hash as before.
+# The glanced wheel is the one release.yml built from tag v0.3.8, attested by
+# PyPI and GitHub, and reproducible from that tag.
 #
 # One hash per package: the exact wheel and nothing else. pip runs in
 # hash-checking mode for the whole set, so an unpinned or substituted
@@ -35,8 +33,8 @@ flatbuffers==25.12.19 \
     --hash=sha256:7634f50c427838bb021c2d66a3d1168e9d199b0607e6329399f04846d42e20b4
 fonttools==4.67.0 \
     --hash=sha256:916836845e4b1c1447bb61390ffb3cb5f2940fd9f5d6de4685539a81806c7764
-glanced==0.3.7 \
-    --hash=sha256:f0a264e31879e434d260bd49236222b0e9d76d021c7438c3a76565fd29dd4b50
+glanced==0.3.8 \
+    --hash=sha256:971fa19e5925e148ece336fa2f4ab920c4eb3b3defe89614e5595cce12c3af18
 kiwisolver==1.5.1 \
     --hash=sha256:18a0cfb124546a4c2e6087c5f3029c7f44b37c85b142e0ced71f73a7599ac208
 matplotlib==3.11.2 \
