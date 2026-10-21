@@ -3,12 +3,13 @@
 The PAM half of the unlock path. It connects to your running `glanced` over
 the auth socket in `$XDG_RUNTIME_DIR/glance/` and turns the daemon's verdict
 into a PAM result. All of the vision, liveness and recognition is in the
-daemon; this module is about 150 lines and does none of it.
+daemon; this module does none of it.
 
 ## The short version
 
 ```bash
 glancectl setup-pam            # builds + installs the module if needed, edits the lock stacks (sudo)
+glancectl setup-pam --sudo     # ... and lets a face authorize sudo as well
 glancectl setup-pam --remove   # undo
 ```
 
@@ -16,13 +17,13 @@ glancectl setup-pam --remove   # undo
 stack can lock you out. Every file `setup-pam` touches gets a
 `.glance-backup` beside it.
 
-## Where it goes, and why only there
+## Where it goes
 
 The module refuses to run for any account other than the one the calling
-process runs as, and refuses entirely in a setuid context. So it cannot be
-made to authorize `sudo`, `su`, or a login manager; it exists for the lock
-screen, where the process is already you and the only question is whether to
-let you back in.
+process runs as, and refuses entirely in a setuid context. So by default it
+cannot be made to authorize `sudo`, `su`, or a login manager; it exists for
+the lock screen, where the process is already you and the only question is
+whether to let you back in.
 
 Omarchy has two lock screens, and `setup-pam` handles both:
 
@@ -57,6 +58,45 @@ If `/etc/pam.d/omarchy-lock-password` does not exist yet, the shell lock
 cannot lock at all (`omarchy-shell lock status` shows `"passwordPam":false`).
 `setup-pam` runs Omarchy's own `omarchy-apply-lock` first, which creates it.
 
+## `sudo`, if you want it
+
+`--sudo` adds the module to `/etc/pam.d/sudo`, where a face can stand in for
+the password:
+
+```
+$ sudo -k && sudo true
+Glance: look at the camera
+Glance: face verified
+```
+
+**It is off by default, and it is a different trade from the lock screen.**
+The lock screen only asks whether to let you back into a session you already
+own. `sudo` hands over root, and the daemon that decides is running as you:
+it will say yes to a face it recognises. So any program that can run `sudo`
+can, in principle, wait for you to walk past the camera. That is the bargain
+Howdy makes, and it is why this is opt-in, and why it is spelled out in
+[SECURITY.md](../SECURITY.md).
+
+The module only allows it in a conversation that is really a `sudo`
+conversation. Every one of these has to hold, or the module declines and the
+stack carries on to the password:
+
+| check | why |
+|---|---|
+| the PAM service is `sudo` | another service cannot borrow the sudo path |
+| `/proc/self/comm` is `sudo` | the conversation is inside the sudo process, not something else wearing its name |
+| there is a controlling terminal | a person is at a keyboard, not a cron job or a systemd service |
+| `-n` / `--non-interactive` was not given | that flag means "never prompt me", and a scan is a question |
+
+`sudoedit` is not covered: it asks for the `sudo` service under a different
+program name, and the check refuses it. `su` is not covered either, and
+neither is a login manager.
+
+A failed scan — nobody in view, a face that does not match, a daemon that is
+not running, a daemon that is disarmed, a lockout after five failed attempts
+— falls through to the password exactly as before. `sudo -n` and script-driven
+`sudo` are untouched: no terminal, no scan.
+
 ## Timing
 
 A typed password waits for the face scan ahead of it. The daemon caps that:
@@ -70,12 +110,15 @@ face unlocks in about two seconds, before you would have finished typing.
 |---|---|
 | `debug` | log why the module declined, to the auth log |
 | `timeout=N` | seconds to wait for the daemon (default 20) |
+| `allow_setuid` | allow a setuid context at all; see the sudo section above |
+| `service=NAME` | the PAM service `allow_setuid` applies to (default: `sudo`) |
 
 ## Build by hand
 
 ```bash
 sudo pacman -S --needed pam base-devel
 make -C pam && sudo make -C pam install   # -> /usr/lib/security/pam_glance.so
+make -C pam test                          # the module's decision rules
 ```
 
 ## Check it without locking

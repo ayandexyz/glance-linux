@@ -9,6 +9,9 @@ models/
 *.egg-info/
 reference/
 
+# The PAM module's test binary. Built by `make -C pam test`.
+pam/test_glance_pam
+
 # Build artifacts from `python -m build`.
 dist/
 

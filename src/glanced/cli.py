@@ -385,6 +385,7 @@ def _setup_pam(args: argparse.Namespace) -> int:
         return pamsetup.setup(
             hands_free=args.hands_free,
             remove=args.remove,
+            sudo=getattr(args, "sudo", False),
             repo_pam_dir=repo_pam if repo_pam.exists() else None,
         )
     except subprocess.CalledProcessError as error:
@@ -434,7 +435,7 @@ def _setup(args: argparse.Namespace) -> int:
 
     if not args.no_pam:
         print("\n== lock screen ==")
-        if _setup_pam(argparse.Namespace(hands_free=False, remove=False)) != 0:
+        if _setup_pam(argparse.Namespace(hands_free=False, remove=False, sudo=args.sudo)) != 0:
             print("setup: the lock screen is not wired; the daemon is still running",
                   file=sys.stderr)
             return 1
@@ -645,6 +646,8 @@ def main(argv: list[str] | None = None) -> int:
     setup_pam = subparsers.add_parser("setup-pam", help="wire pam_glance into the lock screen (uses sudo)")
     setup_pam.add_argument("--hands-free", action="store_true",
                            help="scan automatically at lock via the shell's fingerprint stack (needs an enrolled fingerprint)")
+    setup_pam.add_argument("--sudo", action="store_true",
+                           help="let a face authorize sudo as well (read pam/README.md first: it is a different trade)")
     setup_pam.add_argument("--remove", action="store_true", help="strip pam_glance from every lock stack")
     setup_pam.set_defaults(func=_setup_pam)
 
@@ -664,6 +667,8 @@ def main(argv: list[str] | None = None) -> int:
                            help="skip wiring the lock screen")
     setup_all.add_argument("--no-lock", action="store_true",
                            help="skip the lock screen indicator")
+    setup_all.add_argument("--sudo", action="store_true",
+                           help="also let a face authorize sudo (read pam/README.md first: it is a different trade)")
     setup_all.set_defaults(func=_setup)
 
     install_service = subparsers.add_parser(

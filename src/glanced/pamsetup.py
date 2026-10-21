@@ -22,6 +22,15 @@ Two placements, then:
   as long as the screen stays locked. Needs an enrolled fingerprint, because
   that is what makes the shell run the stack at all.
 
+And one more, which is not a lock screen at all:
+
+* **sudo** (`--sudo`): `auth sufficient pam_glance.so allow_setuid` at the top
+  of `/etc/pam.d/sudo`. A face can authorize a privileged command, and
+  anything the module declines falls through to the password. This is a
+  different trade from the lock screen — the lock screen only asks whether to
+  let you back into a session you already own, while this hands over root —
+  so it is opt-in, and `pam/README.md` says what it costs.
+
 Every edit is idempotent, keeps a `.glance-backup` beside the file, and goes
 through `sudo` one file at a time so the terminal shows exactly what is being
 touched. `--remove` strips the line from every stack again.
@@ -38,9 +47,15 @@ PAM_DIR = Path("/etc/pam.d")
 MODULE = Path("/usr/lib/security/pam_glance.so")
 MODULE_LINE = "auth       sufficient                  pam_glance.so"
 
+#: The same line, with the setuid path asked for by name. The module refuses
+#: every setuid context unless a stack claims it this way, so this line is
+#: what makes `sudo` — and only `sudo` — eligible for a face.
+MODULE_LINE_SETUID = "auth       sufficient                  pam_glance.so allow_setuid"
+
 HYPRLOCK = PAM_DIR / "hyprlock"
 SHELL_PASSWORD = PAM_DIR / "omarchy-lock-password"
 SHELL_FINGERPRINT = PAM_DIR / "omarchy-lock-fingerprint"
+SUDO = PAM_DIR / "sudo"
 
 
 def _wired(path: Path) -> bool:
@@ -53,28 +68,40 @@ def _wired(path: Path) -> bool:
 def status() -> dict:
     """What the status socket reports, and what the plugin renders."""
     hyprlock, password, fingerprint = _wired(HYPRLOCK), _wired(SHELL_PASSWORD), _wired(SHELL_FINGERPRINT)
+    sudo = _wired(SUDO)
     return {
         "module": MODULE.exists(),
         "hyprlock": hyprlock,
         "shellPassword": password,
         "shellFingerprint": fingerprint,
-        "wired": hyprlock or password or fingerprint,
+        "sudo": sudo,
+        "wired": hyprlock or password or fingerprint or sudo,
     }
 
 
 # --- editing ------------------------------------------------------------------
 
 
-def _insert_on_demand(text: str) -> str:
+def _insert_before_first_auth(text: str, module_line: str) -> str:
     """Put the module line before the first `auth` line, after any header comments."""
     lines = text.splitlines()
     for index, line in enumerate(lines):
         if line.strip() and not line.lstrip().startswith("#"):
-            lines.insert(index, MODULE_LINE)
+            lines.insert(index, module_line)
             break
     else:
-        lines.append(MODULE_LINE)
+        lines.append(module_line)
     return "\n".join(lines) + "\n"
+
+
+def _insert_on_demand(text: str) -> str:
+    """Put the module line before the first `auth` line, after any header comments."""
+    return _insert_before_first_auth(text, MODULE_LINE)
+
+
+def _insert_setuid(text: str) -> str:
+    """The same, for a stack that wants the setuid path."""
+    return _insert_before_first_auth(text, MODULE_LINE_SETUID)
 
 
 def _insert_before_fprintd(text: str) -> str:
@@ -144,10 +171,11 @@ def _ensure_module(repo_pam_dir: Optional[Path], log) -> bool:
     return MODULE.exists()
 
 
-def setup(*, hands_free: bool = False, remove: bool = False, repo_pam_dir: Optional[Path] = None, log=print) -> int:
+def setup(*, hands_free: bool = False, remove: bool = False, sudo: bool = False,
+          repo_pam_dir: Optional[Path] = None, log=print) -> int:
     if remove:
         touched = 0
-        for path in (HYPRLOCK, SHELL_PASSWORD, SHELL_FINGERPRINT):
+        for path in (HYPRLOCK, SHELL_PASSWORD, SHELL_FINGERPRINT, SUDO):
             if _wired(path):
                 _write(path, _strip(path.read_text()), log)
                 touched += 1
@@ -196,6 +224,21 @@ def setup(*, hands_free: bool = False, remove: bool = False, repo_pam_dir: Optio
         else:
             _write(path, _insert_on_demand(path.read_text()), log)
         log(f"  {hint}")
+        wired_any = True
+
+    # `sudo` is a separate stack, and a separate question: it hands over root
+    # rather than letting you back into a session you already own. It is
+    # wired only when asked for, and the module only answers in it when the
+    # conversation really is a sudo conversation at a terminal.
+    if sudo:
+        if not SUDO.exists():
+            log(f"{SUDO} does not exist; leaving sudo alone")
+        elif _wired(SUDO):
+            log(f"already wired: {SUDO}")
+        else:
+            _write(SUDO, _insert_setuid(SUDO.read_text()), log)
+        log("  sudo: a face can authorize a privileged command, and anything the module declines falls through to the password")
+        log("        (read pam/README.md before you use this: it is a different trade from the lock screen)")
         wired_any = True
 
     if not wired_any:

@@ -32,11 +32,12 @@ vulnerability. You will get a reply within a week.
   passphrase. With `--remember` that passphrase sits 0600 in your home
   directory, which is a deliberate convenience trade-off: it protects the
   store from an offline copy of the disk, not from your own account.
-- **The PAM module.** `pam_glance.so` refuses to run setuid, refuses to act
-  for any user but the calling one, only talks to a socket owned by that user,
-  and treats every failure — timeout, malformed reply, missing daemon — as
-  "not authenticated", which `auth sufficient` turns into a fall-through to
-  the password.
+- **The PAM module.** `pam_glance.so` refuses to act for any user but the
+  calling one, only talks to a socket owned by that user, and treats every
+  failure — timeout, malformed reply, missing daemon — as "not authenticated",
+  which `auth sufficient` turns into a fall-through to the password. It
+  refuses setuid contexts, unless a stack asks for that path by name with
+  `allow_setuid`; see [The sudo path](#the-sudo-path) below.
 - **The bar widget.** It runs `glancectl` only at a checked absolute path,
   with a pinned environment, bounded output and a process-tree deadline; see
   `plugin/README.md`.
@@ -68,6 +69,44 @@ and do not use `--hands-free`.
 Moving the daemon and the enrollment store to a root-owned system service
 (the `fprintd` shape) is the fix, and is on the roadmap. It is a redesign,
 not a patch, so it is not in this release.
+
+### The sudo path
+
+`glancectl setup-pam --sudo` puts the module in `/etc/pam.d/sudo`, where a
+face can authorize a privileged command instead of a password. **This is
+opt-in and it is a different trade from the lock screen**, because the lock
+screen only asks whether to let you back into a session you already own,
+while `sudo` hands over root.
+
+The daemon runs as you, and it says yes to a face it recognises. So:
+
+> Any program already running as your user — the same compromised editor
+> extension, malicious plugin or script — can run `sudo` and wait for you to
+> walk past the camera. When you do, it gets root.
+
+That is the bargain Howdy makes, and it is the whole of what this buys. The
+module keeps the blast radius as small as it can:
+
+- the setuid path is **off unless a stack asks for it by name**
+  (`auth sufficient pam_glance.so allow_setuid`), and the lock stacks never
+  do;
+- the PAM service has to be `sudo` — another service cannot borrow the path;
+- the program talking to the module has to be `sudo` itself, read from
+  `/proc/self/comm`. A PAM file that named `sudo` but was loaded by anything
+  else is refused;
+- there has to be a controlling terminal, so a person is at a keyboard and
+  not a cron job or a systemd service;
+- `-n` / `--non-interactive` is refused, because that flag means "never
+  prompt me".
+
+`sudoedit`, `su` and login managers are not covered. A failed scan — nobody in
+view, a face that does not match, a disarmed daemon, a lockout after five
+failed attempts — falls through to the password exactly as before.
+
+If that trade is not one you want, do not turn it on. It is a convenience
+feature, not a security upgrade: the webcam is 2D, the liveness cues do not
+reliably defeat a video of you, and the password is still the strongest thing
+you have.
 
 ### Residual risks you should know about
 
