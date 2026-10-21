@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.9 — 2026-10-22
+
+### Added
+- The lock-screen scan starts by itself, and Enter on an empty password field
+  also asks for it, on the 4.0.x diff set too — not just 4.5's. This was
+  PR #14's auto-start feature, originally bundled only with the Omarchy 4.5
+  rebase; it is now ported onto `diffs/4.0/` as well, so both baselines
+  behave the same way instead of 4.0.x users still needing to type something
+  before the camera opens. `omarchy-shell lock faceAutoStart off` turns it
+  off on either version.
+
 ## 0.3.8 — 2026-10-22
 
 ### Fixed
