@@ -1,6 +1,6 @@
 --- /usr/share/omarchy/shell/plugins/lock/Service.qml
 +++ Service.qml
-@@ -33,6 +33,36 @@
+@@ -33,6 +33,40 @@
    property string lastEventAt: ""
    property bool strandedLock: false
    property bool strandedLockResolved: false
@@ -34,10 +34,14 @@
 +  // turn and did not recognise anyone — and then the field wants a password,
 +  // not another scan, so the hint that promises one is taken away.
 +  property bool facePasswordPrompt: false
++  // Enter on an empty field, asked for again after the first scan already
++  // missed: the stuck conversation is being answered for real so a fresh
++  // one can start, and the PamContext that closes it is the one that notices.
++  property bool faceRetryRequested: false
  
    readonly property bool locked: lockRequested || sessionLock.locked || sessionLock.secure
    readonly property bool authenticating: authenticatingPassword || fingerprintAuthenticating
-@@ -113,12 +143,125 @@
+@@ -113,12 +147,126 @@
      console.log("omarchy lock " + lastEventAt + " " + event)
    }
  
@@ -158,12 +162,13 @@
      failureMessage = ""
      failedAttempts = 0
      authenticatingPassword = false
++    faceRetryRequested = false
 +    clearFace()
 +    faceAutoStartTimer.stop()
      fingerprintAuthenticating = false
      fingerprintRetryTimer.stop()
      if (passwordPam.active) passwordPam.abort()
-@@ -132,8 +275,12 @@
+@@ -132,8 +280,12 @@
      }
  
      resetAuthenticationState()
@@ -176,7 +181,7 @@
      logEvent("lock-requested")
      queueSessionLock()
  
-@@ -175,13 +322,32 @@
+@@ -175,13 +327,59 @@
  
    function submitPassword(value) {
      var password = String(value || "")
@@ -187,7 +192,11 @@
 +    // for the password: answer that one. A second conversation would leave
 +    // the first one waiting for an answer that never comes.
 +    if (passwordPam.active && passwordPam.responseRequired) {
-+      if (password.length === 0) return
++      if (password.length === 0) {
++        runWake()
++        retryFaceScan()
++        return
++      }
 +      runWake()
 +      failureMessage = ""
 +      pendingPassword = password
@@ -204,6 +213,29 @@
 +    startPasswordPam()
 +  }
  
++  // Asked for again, after the one the lock already tried missed: that
++  // conversation is sitting at the password prompt waiting for an answer
++  // nobody is going to give it. abort() does not notify back while a
++  // PamContext is sitting at an unanswered prompt — no onCompleted, no
++  // onError, the subprocess just keeps blocking — so this answers for real
++  // instead: pam_unix rejects an empty password immediately (this is a real
++  // account, so nullok never applies), which is a definitive, fast failure
++  // rather than a hang, and a fresh scan starts once that lands.
++  function retryFaceScan() {
++    if (!passwordPam.active) {
++      startFaceScan()
++      return
++    }
++    if (faceRetryRequested) return
++    faceRetryRequested = true
++    // Held until the response actually completes: handlePamMessage() dropped
++    // it to false the moment this conversation asked for a password, and
++    // without this a second Enter in that gap reaches this same branch again
++    // before the first one has settled, racing two of them.
++    authenticatingPassword = true
++    passwordPam.respond("")
++  }
++
 +  // Open the conversation. With an empty password this is the face scan,
 +  // which the stack tries before the password one — so the field does not
 +  // have to hold anything for the camera to open.
@@ -211,7 +243,7 @@
      if (!passwordPam.start()) {
        handlePasswordFailure()
        return
-@@ -190,8 +356,24 @@
+@@ -190,8 +388,24 @@
      Qt.callLater(respondToPasswordPrompt)
    }
  
@@ -237,7 +269,7 @@
      passwordPam.respond(pendingPassword)
    }
  
-@@ -277,6 +459,10 @@
+@@ -277,6 +491,10 @@
          inputEnabled: root.lockRequested
          loadBackground: root.locked
          passwordText: root.enteredPassword
@@ -248,7 +280,7 @@
          onPasswordTextEdited: function(password) { root.enteredPassword = password }
          onSubmitPassword: function(password) { root.submitPassword(password) }
          onClearFailureRequested: root.failureMessage = ""
-@@ -287,6 +473,29 @@
+@@ -287,6 +505,29 @@
    }
  
    PanelWindow {
@@ -278,7 +310,7 @@
      id: previewWindow
      visible: root.previewVisible
      anchors { top: true; bottom: true; left: true; right: true }
-@@ -307,6 +516,10 @@
+@@ -307,6 +548,10 @@
        inputEnabled: false
        loadBackground: root.previewVisible
        passwordText: ""
@@ -289,7 +321,7 @@
      }
  
      MouseArea {
-@@ -321,23 +534,102 @@
+@@ -321,23 +566,119 @@
      config: "omarchy-lock-password"
      user: root.userName
  
@@ -305,6 +337,17 @@
 -      if (!root.lockRequested) return
 -      if (result === PamResult.Success) root.finishUnlock()
 -      else root.handlePasswordFailure()
++      // The empty answer retryFaceScan() sent lands here (or in onError,
++      // depending on how it fails) rather than in the usual branches below:
++      // this was never a real attempt the user made, so it is not a failure
++      // to count or show, just the cue that it is safe to try again.
++      if (root.faceRetryRequested) {
++        root.faceRetryRequested = false
++        root.authenticatingPassword = false
++        root.startFaceScan()
++        return
++      }
++
 +      if (!root.lockRequested) {
 +        root.authenticatingPassword = false
 +        return
@@ -326,6 +369,12 @@
      }
  
      onError: function(error) {
++      if (root.faceRetryRequested) {
++        root.faceRetryRequested = false
++        root.authenticatingPassword = false
++        root.startFaceScan()
++        return
++      }
 +      root.authenticatingPassword = false
 +      root.faceScanMissed()
        root.handlePasswordFailure()
@@ -398,7 +447,7 @@
    PamContext {
      id: fingerprintPam
      config: "omarchy-lock-fingerprint"
-@@ -485,7 +777,12 @@
+@@ -485,7 +826,12 @@
      path: "/etc/pam.d/omarchy-lock-password"
      watchChanges: true
      printErrors: false
@@ -412,7 +461,7 @@
      onLoadFailed: root.passwordPamConfigured = false
      onFileChanged: reload()
    }
-@@ -530,6 +827,9 @@
+@@ -530,6 +876,9 @@
          realScreens: root.realScreenCount(),
          passwordPam: root.passwordPamConfigured,
          fingerprint: root.fingerprintConfigured,
@@ -422,7 +471,7 @@
          authenticating: root.authenticating,
          lastEvent: root.lastEvent,
          lastEventAt: root.lastEventAt
-@@ -547,5 +847,27 @@
+@@ -547,5 +896,27 @@
        root.previewVisible = false
        return "ok"
      }

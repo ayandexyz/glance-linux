@@ -98,6 +98,10 @@ Item {
   // turn and did not recognise anyone — and then the field wants a password,
   // not another scan, so the hint that promises one is taken away.
   property bool facePasswordPrompt: false
+  // Enter on an empty field, asked for again after the first scan already
+  // missed: the stuck conversation is being aborted so a fresh one can
+  // start, and the PamContext that closes it is the one that notices.
+  property bool faceRetryRequested: false
 
   readonly property bool locked: lockRequested || sessionLock.locked || sessionLock.secure
 
@@ -347,6 +351,7 @@ Item {
     failureMessage = ""
     failedAttempts = 0
     authenticatingPassword = false
+    faceRetryRequested = false
     clearFace()
     faceAutoStartTimer.stop()
     fingerprintAuthenticating = false
@@ -545,7 +550,11 @@ Item {
     // for the password: answer that one. A second conversation would leave
     // the first one waiting for an answer that never comes.
     if (passwordPam.active && passwordPam.responseRequired) {
-      if (password.length === 0) return
+      if (password.length === 0) {
+        runWake()
+        retryFaceScan()
+        return
+      }
       runWake()
       failureMessage = ""
       pendingPassword = password
@@ -559,6 +568,31 @@ Item {
     pendingPassword = password
     authenticatingPassword = true
     startPasswordPam()
+  }
+
+  // Asked for again, after the one the lock already tried missed: that
+  // conversation is sitting at the password prompt waiting for an answer
+  // nobody is going to give it, so it is aborted rather than left there, and
+  // a fresh one starts once the PamContext confirms it is actually closed.
+  function retryFaceScan() {
+    if (!passwordPam.active) {
+      startFaceScan()
+      return
+    }
+    if (faceRetryRequested) return
+    faceRetryRequested = true
+    // Held until the response actually completes: handlePamMessage() dropped
+    // it to false the moment this conversation asked for a password, and
+    // without this a second Enter in that gap reaches this same branch again
+    // before the first one has settled, racing two of them.
+    authenticatingPassword = true
+    // abort() does not notify back while this conversation is sitting at an
+    // unanswered prompt — no onCompleted, no onError, the subprocess just
+    // keeps blocking. Answering for real closes it properly instead: pam_unix
+    // rejects an empty password immediately (this is a real account, so
+    // nullok never applies), which is a definitive, fast failure rather than
+    // a hang, and lands in onCompleted below.
+    passwordPam.respond("")
   }
 
   // Open the conversation. With an empty password this is the face scan,
@@ -828,6 +862,17 @@ Item {
     onCompleted: function(result) {
       root.pendingPassword = ""
 
+      // The abort asked for by retryFaceScan() lands here (or in onError,
+      // depending on how it closes) rather than in the usual branches below:
+      // this was never a real attempt the user made, so it is not a failure
+      // to count or show, just the cue that it is safe to try again.
+      if (root.faceRetryRequested) {
+        root.faceRetryRequested = false
+        root.authenticatingPassword = false
+        root.startFaceScan()
+        return
+      }
+
       if (!root.lockRequested) {
         root.authenticatingPassword = false
         return
@@ -849,6 +894,12 @@ Item {
     }
 
     onError: function(error) {
+      if (root.faceRetryRequested) {
+        root.faceRetryRequested = false
+        root.authenticatingPassword = false
+        root.startFaceScan()
+        return
+      }
       root.authenticatingPassword = false
       root.faceScanMissed()
       root.handlePasswordFailure()

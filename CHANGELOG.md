@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+- Enter on an empty password field, asked for again after the first scan
+  already missed, now actually starts a second scan instead of doing
+  nothing. The conversation was sitting at the password prompt waiting for
+  an answer nobody was going to give it, and `abort()` does not notify back
+  while a PamContext is stuck there — no `onCompleted`, no `onError`, the
+  subprocess just keeps blocking. Answering with an empty password instead
+  closes it for real: `pam_unix` rejects it immediately rather than hanging,
+  and that definitive, fast failure is what triggers the retry. Verified
+  live on real hardware (Omarchy 4.5.0rc1) after an earlier version of this
+  fix that used `abort()` hung at "Checking…" instead.
+
 ## 0.3.9 — 2026-10-22
 
 ### Added
