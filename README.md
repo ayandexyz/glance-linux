@@ -107,13 +107,18 @@ python -m venv ~/.local/share/glance
 omarchy plugin add https://github.com/ayandexyz/omarchy-glance.git --enable
 ```
 
-The lock is generated for CPython 3.14 on x86_64 Linux, which is what Omarchy
-ships; regenerate it for anything else, because the wheels and so the hashes
-differ:
+The lock is generated for CPython 3.14, which is what Omarchy ships. Locks
+written with `tools/mklock.py` cover x86_64 and aarch64 in one file: each
+package is pinned to one version and to the hash of every Linux wheel of it
+that 3.14 can install on either architecture, and a package only one of them
+needs (MediaPipe) carries a `platform_machine` marker. It resolves each
+architecture with uv, so markers are evaluated for the target rather than for
+the machine running it:
 
 ```bash
-python -m pip install --dry-run --ignore-installed \
-    --report report.json 'glanced[runtime,gui]==0.3.9'
+tools/mklock.py make -r 'glanced[runtime,gui]==X.Y.Z' -c packaging/glanced-<previous>.lock \
+    -o packaging/glanced-X.Y.Z.lock        # -c keeps the previous versions where it can
+tools/mklock.py verify packaging/glanced-X.Y.Z.lock   # every hash PyPI's, no wheel missing
 ```
 
 On Linux aarch64 (Apple Silicon Macs under Asahi Linux, ARM laptops)
