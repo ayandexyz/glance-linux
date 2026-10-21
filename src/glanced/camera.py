@@ -28,6 +28,8 @@ from typing import Callable, Iterator, Optional, Sequence
 
 import numpy as np
 
+from . import v4l2
+
 try:
     import cv2
 except ImportError:  # pragma: no cover
@@ -45,7 +47,9 @@ STALL_TIMEOUT = 5.0
 
 @dataclass
 class CameraConfig:
-    device: str = "/dev/video0"
+    #: None picks the camera: $GLANCE_DEVICE, else the first V4L2 node that
+    #: captures video (see `v4l2.default_device`).
+    device: Optional[str] = None
     width: int = 1280
     height: int = 720
     fps: int = 30
@@ -67,6 +71,7 @@ class Camera:
         if cv2 is None:
             raise RuntimeError("opencv-python is required for capture")
         self.config = config
+        self.device = v4l2.resolve(config.device)
         self.stall_timeout = stall_timeout
         self.close_timeout = close_timeout
         self._capture_factory = capture_factory or _open_v4l2
@@ -89,9 +94,9 @@ class Camera:
         self.close()
 
     def open(self) -> None:
-        capture = self._capture_factory(self.config.device)
+        capture = self._capture_factory(self.device)
         if not capture.isOpened():
-            raise RuntimeError(f"could not open {self.config.device}")
+            raise RuntimeError(f"could not open {self.device}")
         capture.set(cv2.CAP_PROP_FRAME_WIDTH, self.config.width)
         capture.set(cv2.CAP_PROP_FRAME_HEIGHT, self.config.height)
         capture.set(cv2.CAP_PROP_FPS, self.config.fps)

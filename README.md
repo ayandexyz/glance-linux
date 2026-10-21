@@ -164,6 +164,12 @@ python -m venv .venv && .venv/bin/pip install -e '.[runtime,gui,dev]'
 .venv/bin/glancectl live --mode heavy        # liveness against your webcam, no unlock
 ```
 
+The camera is the first V4L2 node that captures video, skipping hardware
+codecs and metadata nodes; on an Apple Silicon Mac under Asahi that is
+`/dev/video1`, because `/dev/video0` is the video decoder. Set
+`GLANCE_DEVICE=/dev/videoN` (in the environment, or in the service with
+`systemctl --user edit glanced`) or pass `--device` to pick another one.
+
 Then the real thing:
 
 ```bash

@@ -164,8 +164,11 @@ def _enroll(args: argparse.Namespace) -> int:
                 return 1
 
     # The window's worker thread builds its own processor, so building one
-    # here too would load MediaPipe and ArcFace twice and hold /dev/video0
+    # here too would load MediaPipe and ArcFace twice and hold the camera
     # while the window tries to open it.
+    from . import v4l2
+
+    args.device = v4l2.resolve(args.device)
     processor = None
     if not args.gui:
         try:
@@ -605,7 +608,8 @@ def main(argv: list[str] | None = None) -> int:
 
     enroll = subparsers.add_parser("enroll", help="capture your face into the encrypted store")
     enroll.add_argument("--name", required=True, help="identity name, e.g. your first name or 'glasses'")
-    enroll.add_argument("--device", default="/dev/video0")
+    enroll.add_argument("--device", default=None,
+                        help="V4L2 camera (default: $GLANCE_DEVICE, else the first device that captures video)")
     enroll.add_argument("--gui", action="store_true",
                         help="guide the sweep in a window with a camera preview (needs the 'gui' extra)")
     enroll.add_argument("--samples-per-pose", type=int, default=poses.SAMPLES_PER_POSE,
@@ -700,7 +704,8 @@ def main(argv: list[str] | None = None) -> int:
         "live", help="run the liveness model against your webcam (no unlock, no recognition)"
     )
     live.add_argument("--mode", choices=["light", "heavy"], default="heavy")
-    live.add_argument("--device", default="/dev/video0")
+    live.add_argument("--device", default=None,
+                        help="V4L2 camera (default: $GLANCE_DEVICE, else the first device that captures video)")
     live.add_argument("--scan-seconds", type=float, default=10.0)
     live.add_argument("--preview", action="store_true", help="also show the camera window")
     live.set_defaults(func=_live)
@@ -712,7 +717,8 @@ def main(argv: list[str] | None = None) -> int:
 
     daemon = subparsers.add_parser("daemon", help="run the service")
     daemon.add_argument("--mode", choices=["light", "heavy"], default="light")
-    daemon.add_argument("--device", default="/dev/video0")
+    daemon.add_argument("--device", default=None,
+                        help="V4L2 camera (default: $GLANCE_DEVICE, else the first device that captures video)")
     daemon.add_argument("--scan-timeout", type=float, default=8.0, help="seconds per unlock attempt")
     daemon.add_argument("--no-face-timeout", type=float, default=3.0,
                         help="give up this early when no face is in view, so a typed password is not kept waiting")

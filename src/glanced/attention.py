@@ -130,12 +130,14 @@ class AttentionTracker:
     def __init__(
         self,
         *,
-        device: str = "/dev/video0",
+        device: Optional[str] = None,
         fps: float = DEFAULT_FPS,
         landmarker_factory: Optional[Callable[[], Any]] = None,
         camera_factory: Optional[Callable[[str], Any]] = None,
     ) -> None:
-        self.device = device
+        from . import v4l2
+
+        self.device = v4l2.resolve(device)
         self.fps = fps
         self._landmarker_factory = landmarker_factory or self._default_landmarker
         self._camera_factory = camera_factory or self._default_camera

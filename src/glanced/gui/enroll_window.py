@@ -102,7 +102,7 @@ class CaptureWorker(QObject):
     finished = Signal(object)  # Sample
     failed = Signal(str)
 
-    def __init__(self, *, device: str, samples_per_pose: int, timeout: float) -> None:
+    def __init__(self, *, device: Optional[str], samples_per_pose: int, timeout: float) -> None:
         super().__init__()
         self.device = device
         self.samples_per_pose = samples_per_pose
@@ -427,7 +427,7 @@ class EnrollmentWindow(QWidget):
         self,
         *,
         name: str,
-        device: str,
+        device: Optional[str],
         samples_per_pose: int,
         timeout: float,
         debug: bool = False,
@@ -519,7 +519,7 @@ class EnrollmentWindow(QWidget):
 def run(
     *,
     name: str,
-    device: str = "/dev/video0",
+    device: Optional[str] = None,
     samples_per_pose: int = 2,
     timeout: float = 180.0,
     debug: bool = False,

@@ -88,7 +88,7 @@ class Daemon:
         self,
         *,
         mode: LivenessMode = LivenessMode.LIGHT,
-        device: str = "/dev/video0",
+        device: Optional[str] = None,
         store_path: Path = paths.STORE_PATH,
         scan_timeout: float = DEFAULT_SCAN_TIMEOUT,
         no_face_timeout: float = DEFAULT_NO_FACE_TIMEOUT,
@@ -103,7 +103,9 @@ class Daemon:
         camera_factory: Optional[Callable[[str], Any]] = None,
     ) -> None:
         self.mode = mode
-        self.device = device
+        from . import v4l2
+
+        self.device = v4l2.resolve(device)
         self.store_path = Path(store_path)
         self.scan_timeout = scan_timeout
         self.no_face_timeout = no_face_timeout
