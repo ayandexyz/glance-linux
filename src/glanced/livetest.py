@@ -91,7 +91,7 @@ def _render(snapshot, geometry, fps: float, mode: LivenessMode, elapsed: float, 
 def run(
     *,
     mode: LivenessMode = LivenessMode.HEAVY,
-    device: str = "/dev/video0",
+    device: Optional[str] = None,
     scan_seconds: float = 10.0,
     task_path: Optional[Path] = None,
     preview: bool = False,

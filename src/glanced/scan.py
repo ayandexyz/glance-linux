@@ -18,7 +18,7 @@ import numpy as np
 from . import paths
 from .align import align
 from .camera import render_crop, to_working_resolution
-from .landmarker import DetectedFace, Landmarker
+from .landmarker import DetectedFace, create_landmarker
 from .liveness import LivenessFrame
 from .liveness.features import extract
 
@@ -45,7 +45,7 @@ class FaceProcessor:
         arcface_model: Optional[Path] = None,
         embed: bool = True,
     ) -> None:
-        self.landmarker = Landmarker(landmarker_task or paths.landmarker_task())
+        self.landmarker = create_landmarker(landmarker_task)
         self.embedder = None
         if embed:
             from .embed import ArcFaceEmbedder

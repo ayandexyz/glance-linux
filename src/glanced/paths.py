@@ -36,6 +36,9 @@ PASSPHRASE_FILE = Path(os.environ.get("GLANCE_PASSPHRASE_FILE") or DATA_DIR / "p
 
 LANDMARKER_NAME = "face_landmarker.task"
 ARCFACE_NAME = "arcface.onnx"
+#: The onnxruntime backend's two networks (see `landmarker_onnx`).
+FACE_DETECTOR_NAME = "face_detector.onnx"
+FACE_MESH_NAME = "face_landmarks.onnx"
 
 
 def find_model(name: str) -> Path:
@@ -52,6 +55,14 @@ def find_model(name: str) -> Path:
 
 def landmarker_task() -> Path:
     return Path(os.environ.get("GLANCE_LANDMARKER_TASK") or find_model(LANDMARKER_NAME))
+
+
+def face_detector_model() -> Path:
+    return Path(os.environ.get("GLANCE_FACE_DETECTOR") or find_model(FACE_DETECTOR_NAME))
+
+
+def face_mesh_model() -> Path:
+    return Path(os.environ.get("GLANCE_FACE_MESH") or find_model(FACE_MESH_NAME))
 
 
 def arcface_model() -> Path:

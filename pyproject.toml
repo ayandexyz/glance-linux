@@ -20,7 +20,9 @@ runtime = [
     "opencv-python>=4.9",
     "onnxruntime>=1.17",
     # 1.x is SIGKILLed building the FaceLandmarker, on 3.12 and 3.14 alike (#1).
-    "mediapipe>=0.10.14,<1",
+    # MediaPipe ships no Linux aarch64 wheel; there the landmarker runs the
+    # same networks on onnxruntime instead (glanced/landmarker_onnx.py).
+    "mediapipe>=0.10.14,<1; platform_machine == 'x86_64'",
     "cryptography>=42",
 ]
 dev = ["pytest>=8"]
@@ -39,7 +41,7 @@ where = ["src"]
 # leaves them out is a face unlock that stops at the lock screen. Kept in step
 # with the canonical top-level copies by tests/test_packaged_data.py.
 [tool.setuptools.package-data]
-glanced = ["_data/pam/*", "_data/lock-faceid/*", "_data/lock-faceid/diffs/*/*", "_data/hooks/*"]
+glanced = ["_data/pam/*", "_data/lock-faceid/*", "_data/lock-faceid/diffs/*/*", "_data/hooks/*", "_data/face_geometry/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

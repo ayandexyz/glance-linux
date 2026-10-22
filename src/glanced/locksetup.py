@@ -45,8 +45,64 @@ PACKAGED_HOOK = Path("/usr/share/glanced/hooks/repair-glance-lock.hook")
 HOOK_NAME = "repair-glance-lock.hook"
 
 
+DEFAULT_OMARCHY_PATH = Path("/usr/share/omarchy")
+
+#: Process names the Omarchy shell runs under.
+SHELL_PROCESSES = ("quickshell", "qs")
+
+
+def _running_shell_omarchy_path(proc: Path = Path("/proc")) -> Optional[Path]:
+    """OMARCHY_PATH as the user's running Omarchy shell sees it, if it has one.
+
+    The shell can run from a checkout (`OMARCHY_PATH=~/.local/share/omarchy`)
+    while a terminal, the systemd user service, or `sudo` has no such
+    variable. The lock plugin to patch is the one the shell loads, so ask the
+    shell. Only processes owned by this user are read.
+    """
+    uid = os.getuid()
+    try:
+        entries = list(proc.iterdir())
+    except OSError:
+        return None
+    for entry in entries:
+        if not entry.name.isdigit():
+            continue
+        try:
+            if entry.stat().st_uid != uid:
+                continue
+            if (entry / "comm").read_text().strip() not in SHELL_PROCESSES:
+                continue
+            environ = (entry / "environ").read_bytes()
+            cmdline = (entry / "cmdline").read_bytes()
+        except OSError:
+            continue
+        for item in environ.split(b"\0"):
+            if item.startswith(b"OMARCHY_PATH="):
+                value = item.split(b"=", 1)[1].decode(errors="replace")
+                if value:
+                    return Path(value)
+        # No variable: the config path it was started with, e.g.
+        # `quickshell -p ~/.local/share/omarchy/shell/shell.qml`.
+        for arg in cmdline.split(b"\0"):
+            candidate = Path(arg.decode(errors="replace"))
+            if not candidate.is_absolute():
+                continue
+            for root in (candidate, *candidate.parents):
+                if (root / "shell" / "shell.qml").is_file():
+                    return root
+    return None
+
+
+def omarchy_path() -> Path:
+    """`$OMARCHY_PATH`, else the running shell's, else /usr/share/omarchy."""
+    configured = os.environ.get("OMARCHY_PATH")
+    if configured:
+        return Path(configured)
+    return _running_shell_omarchy_path() or DEFAULT_OMARCHY_PATH
+
+
 def lock_dir() -> Path:
-    return Path(os.environ.get("OMARCHY_PATH", "/usr/share/omarchy")) / "shell" / "plugins" / "lock"
+    return omarchy_path() / "shell" / "plugins" / "lock"
 
 
 def user_hook_path() -> Path:
@@ -100,7 +156,10 @@ def status() -> dict:
 
 
 def _sudo(*command: str) -> None:
-    subprocess.run(["sudo", *command], check=True)
+    # sudo resets the environment, and apply.sh/revert.sh fall back to
+    # /usr/share/omarchy without OMARCHY_PATH: pass on the one resolved here,
+    # or a shell running from a checkout gets the package copy patched.
+    subprocess.run(["sudo", "env", f"OMARCHY_PATH={omarchy_path()}", *command], check=True)
 
 
 def _hook_source() -> Optional[Path]:

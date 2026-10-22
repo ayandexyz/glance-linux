@@ -1,12 +1,27 @@
-"""MediaPipe FaceLandmarker adapter.
+"""Face landmarker: MediaPipe's FaceLandmarker, or the same networks on onnxruntime.
 
-The single place MediaPipe is touched. Everything downstream consumes a plain
-(N, 2) pixel-space mesh plus a yaw, so swapping in SCRFD — or a model with a
-real anti-spoof head — does not reach into the liveness code at all.
+The single place the face networks are touched. Everything downstream consumes
+a plain (N, 2) pixel-space mesh plus a yaw, so swapping in SCRFD — or a model
+with a real anti-spoof head — does not reach into the liveness code at all.
+
+Two backends produce that:
+
+* ``mediapipe`` — `MediaPipeLandmarker` below, MediaPipe's own
+  FaceLandmarker. The default wherever MediaPipe is installed, which is
+  x86_64: nothing changes there.
+* ``onnx`` — `landmarker_onnx.OnnxLandmarker`, the same BlazeFace and Face
+  Mesh V2 networks converted to ONNX, with MediaPipe's graph logic ported to
+  numpy. The default where MediaPipe is not installed, which includes every
+  Linux aarch64 machine: MediaPipe ships no wheel there.
+
+``$GLANCE_LANDMARKER=mediapipe|onnx`` forces one. `create_landmarker()` is
+what the scan pipeline and attention mode call.
 """
 
 from __future__ import annotations
 
+import importlib.util
+import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -21,7 +36,7 @@ import numpy as np
 # treats sounddevice as optional, so make its import fail cleanly.
 sys.modules.setdefault("sounddevice", None)
 
-from . import paths
+from . import models, paths
 from .liveness.features import pitch_from_transformation_matrix, yaw_from_transformation_matrix
 
 #: The five points ArcFace alignment expects, as FaceMesh indices:
@@ -51,7 +66,35 @@ class DetectedFace:
         return self.mesh[list(indices)]
 
 
-class Landmarker:
+BACKENDS = ("mediapipe", "onnx")
+
+
+def mediapipe_available() -> bool:
+    return importlib.util.find_spec("mediapipe") is not None
+
+
+def backend() -> str:
+    """Which landmarker runs: $GLANCE_LANDMARKER, else MediaPipe when it is
+    installed, else onnxruntime."""
+    forced = os.environ.get("GLANCE_LANDMARKER", "").strip().lower()
+    if forced:
+        if forced not in BACKENDS:
+            raise ValueError(f"GLANCE_LANDMARKER={forced!r}: expected one of {', '.join(BACKENDS)}")
+        return forced
+    return "mediapipe" if mediapipe_available() else "onnx"
+
+
+def create_landmarker(task_path: Optional[Path] = None, num_faces: int = 1, **kwargs):
+    """The landmarker for `backend()`. `task_path` is MediaPipe's model
+    bundle; the onnx backend finds its own networks (see `paths`)."""
+    if backend() == "mediapipe":
+        return MediaPipeLandmarker(task_path, num_faces)
+    from .landmarker_onnx import OnnxLandmarker
+
+    return OnnxLandmarker(None, num_faces, **kwargs)
+
+
+class MediaPipeLandmarker:
     def __init__(self, task_path: Optional[Path] = None, num_faces: int = 1) -> None:
         # Where mediapipe pulls in TensorFlow's bundled protobuf (the Arch
         # packages do), loading it before onnxruntime aborts onnxruntime's
@@ -63,11 +106,7 @@ class Landmarker:
         from mediapipe.tasks.python import BaseOptions, vision
 
         self.task_path = Path(task_path or paths.landmarker_task())
-        if not self.task_path.exists():
-            raise FileNotFoundError(
-                f"face_landmarker.task not found at {self.task_path}. "
-                "Fetch it with `glancectl fetch-model`."
-            )
+        models.verify(self.task_path, models.LANDMARKER.sha256, "face_landmarker.task")
         self._landmarker = vision.FaceLandmarker.create_from_options(
             vision.FaceLandmarkerOptions(
                 base_options=BaseOptions(model_asset_path=str(self.task_path)),
@@ -108,3 +147,7 @@ class Landmarker:
 
     def close(self) -> None:
         self._landmarker.close()
+
+
+#: The name scan.py and attention.py used before there were two backends.
+Landmarker = create_landmarker

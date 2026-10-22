@@ -29,6 +29,12 @@ PAIRS += [
         PACKAGED / "hooks" / "repair-glance-lock.hook",
     )
 ]
+# MediaPipe's face geometry metadata, for the onnxruntime landmarker.
+PAIRS += [
+    (source, PACKAGED / "face_geometry" / source.name)
+    for source in sorted((ROOT / "packaging" / "face_geometry").iterdir())
+    if source.is_file()
+]
 
 
 @pytest.mark.parametrize("canonical,packaged", PAIRS, ids=lambda p: p.name)

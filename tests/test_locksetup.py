@@ -39,3 +39,68 @@ def test_setup_refuses_without_a_lock_plugin(tmp_path, monkeypatch, capsys):
     monkeypatch.setenv("OMARCHY_PATH", str(tmp_path))
     assert locksetup.setup() == 1
     assert "nothing to patch" in capsys.readouterr().out
+
+
+def _fake_proc(tmp_path, processes):
+    proc = tmp_path / "proc"
+    for pid, (comm, environ, *cmdline) in processes.items():
+        entry = proc / str(pid)
+        entry.mkdir(parents=True)
+        (entry / "comm").write_text(comm + "\n")
+        (entry / "environ").write_bytes(b"\0".join(e.encode() for e in environ) + b"\0")
+        args = cmdline[0] if cmdline else [comm]
+        (entry / "cmdline").write_bytes(b"\0".join(a.encode() for a in args) + b"\0")
+    (proc / "self").mkdir(parents=True, exist_ok=True)
+    return proc
+
+
+def test_the_running_shells_omarchy_path_is_found(tmp_path):
+    proc = _fake_proc(tmp_path, {
+        12: ("bash", ["OMARCHY_PATH=/wrong"]),
+        40: ("quickshell", ["HOME=/home/me", "OMARCHY_PATH=/home/me/.local/share/omarchy"]),
+    })
+    assert locksetup._running_shell_omarchy_path(proc) == locksetup.Path("/home/me/.local/share/omarchy")
+
+
+def test_a_shell_started_from_a_checkout_without_the_variable(tmp_path):
+    checkout = tmp_path / "home" / ".local" / "share" / "omarchy"
+    (checkout / "shell").mkdir(parents=True)
+    (checkout / "shell" / "shell.qml").write_text("ShellRoot {}\n")
+    proc = _fake_proc(tmp_path, {
+        40: ("quickshell", ["HOME=/home/me"], ["quickshell", "-p", str(checkout / "shell" / "shell.qml")]),
+    })
+    assert locksetup._running_shell_omarchy_path(proc) == checkout
+
+
+def test_a_shell_without_omarchy_path_means_the_package(tmp_path):
+    proc = _fake_proc(tmp_path, {40: ("quickshell", ["HOME=/home/me"])})
+    assert locksetup._running_shell_omarchy_path(proc) is None
+    assert locksetup._running_shell_omarchy_path(tmp_path / "no-proc") is None
+
+
+def test_omarchy_path_prefers_the_environment_then_the_shell(monkeypatch):
+    monkeypatch.setattr(locksetup, "_running_shell_omarchy_path", lambda: locksetup.Path("/from/shell"))
+    monkeypatch.setenv("OMARCHY_PATH", "/from/env")
+    assert locksetup.omarchy_path() == locksetup.Path("/from/env")
+    monkeypatch.delenv("OMARCHY_PATH")
+    assert locksetup.lock_dir() == locksetup.Path("/from/shell/shell/plugins/lock")
+    monkeypatch.setattr(locksetup, "_running_shell_omarchy_path", lambda: None)
+    assert locksetup.omarchy_path() == locksetup.Path("/usr/share/omarchy")
+
+
+def test_sudo_carries_omarchy_path_to_apply_sh(tmp_path, monkeypatch):
+    """sudo resets the environment: without this a checkout shell gets the
+    package copy under /usr/share/omarchy patched instead."""
+    checkout = tmp_path / "checkout"
+    lock = checkout / "shell" / "plugins" / "lock"
+    lock.mkdir(parents=True)
+    (lock / "Service.qml").write_text("Singleton {}\n")
+    monkeypatch.setenv("OMARCHY_PATH", str(checkout))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    calls = []
+    monkeypatch.setattr(locksetup.subprocess, "run", lambda cmd, check=False: calls.append(cmd))
+    monkeypatch.setattr(locksetup.shutil, "which", lambda name: None)
+
+    assert locksetup.setup(log=lambda *_: None) == 0
+    assert calls[0][:3] == ["sudo", "env", f"OMARCHY_PATH={checkout}"]
+    assert calls[0][-1].endswith("apply.sh")

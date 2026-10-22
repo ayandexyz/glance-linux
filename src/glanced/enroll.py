@@ -38,7 +38,7 @@ MIN_SELF_SIMILARITY = 0.35
 def capture_embeddings(
     processor: FaceProcessor,
     *,
-    device: str = "/dev/video0",
+    device: Optional[str] = None,
     count: int = 5,
     spacing: float = 1.2,
     timeout: float = 60.0,
@@ -304,7 +304,7 @@ class GuidedSession:
 def capture_guided(
     processor: FaceProcessor,
     *,
-    device: str = "/dev/video0",
+    device: Optional[str] = None,
     samples_per_pose: int = SAMPLES_PER_POSE,
     timeout: float = 180.0,
     on_progress: Optional[Callable[[GuidedProgress], None]] = None,

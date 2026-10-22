@@ -18,6 +18,13 @@ break silently the first time that happened.
 The models are fetched first if they are not already on disk, because a
 service that starts without them only fails later, in the journal, where
 nobody is looking. `--no-fetch` skips it.
+
+The locked install puts `glancectl` in a venv (`~/.local/share/glance/bin`)
+that no shell has on its PATH, so `glancectl live` or `glancectl enroll` at a
+prompt answered "command not found". `setup` therefore also links it into
+`~/.local/bin` (or `$XDG_BIN_HOME`), as `packaging/install.sh` always has for
+a checkout. It never replaces anything it did not make: an existing file, or a
+link to some other `glancectl` (pipx's, say), is left alone and reported.
 """
 
 from __future__ import annotations
@@ -26,6 +33,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+from typing import Optional
 
 UNIT_NAME = "glanced.service"
 
@@ -84,6 +92,61 @@ def glancectl_path() -> Path:
     return candidate.resolve()
 
 
+def bin_dir() -> Path:
+    """Where user executables go: `$XDG_BIN_HOME`, else `~/.local/bin`."""
+    return Path(os.environ.get("XDG_BIN_HOME") or Path.home() / ".local" / "bin")
+
+
+def _on_path(directory: Path) -> bool:
+    entries = [Path(p).expanduser() for p in os.environ.get("PATH", "").split(os.pathsep) if p]
+    try:
+        resolved = directory.resolve()
+    except OSError:
+        return False
+    return any(entry.resolve() == resolved for entry in entries if entry.exists())
+
+
+def link_on_path(target: Path) -> Optional[Path]:
+    """Make `glancectl` at a prompt run `target`. Returns the link, or None
+    when something else already answers to that name there."""
+    link = bin_dir() / "glancectl"
+    target = Path(target)
+    if link.is_symlink():
+        current = Path(os.readlink(link))
+        if not current.is_absolute():
+            current = link.parent / current
+        if current.exists() and current.resolve() == target.resolve():
+            return link
+        if current.exists():
+            print(f"link:    left {link} alone: it points to {current}, not {target}")
+            return None
+        link.unlink()  # dangling: an old venv that is gone
+    elif link.exists():
+        if link.resolve() == target.resolve():
+            return link
+        print(f"link:    left {link} alone: it is a file, not a link to {target}")
+        return None
+    link.parent.mkdir(parents=True, exist_ok=True)
+    link.symlink_to(target)
+    print(f"link:    {link} -> {target}")
+    if not _on_path(link.parent):
+        print(f"         {link.parent} is not on your PATH; add it to run `glancectl` by name")
+    return link
+
+
+def unlink_from_path(target: Path) -> None:
+    """Remove the link `link_on_path` made, and only that."""
+    link = bin_dir() / "glancectl"
+    if not link.is_symlink():
+        return
+    current = Path(os.readlink(link))
+    if not current.is_absolute():
+        current = link.parent / current
+    if current == Path(target) or (current.exists() and current.resolve() == Path(target).resolve()):
+        link.unlink()
+        print(f"removed {link}")
+
+
 def render_unit(exec_start: Path | str, mode: str = "light") -> str:
     return UNIT_TEMPLATE.format(exec_start=exec_start, mode=mode)
 
@@ -93,9 +156,11 @@ def _systemctl(*args: str) -> None:
 
 
 def models_present() -> bool:
-    from . import paths
+    """On disk and matching their pinned hashes."""
+    from . import models
 
-    return paths.landmarker_task().exists() and paths.arcface_model().exists()
+    status = models.status()
+    return status["landmarker"] and status["arcface"]
 
 
 def setup(
@@ -114,6 +179,7 @@ def setup(
         path.unlink()
         _systemctl("daemon-reload")
         print(f"removed {path}")
+        unlink_from_path(glancectl_path())
         print("your enrollment and models are untouched")
         return 0
 
@@ -126,12 +192,17 @@ def setup(
         from . import models
 
         print("fetching the models (~16MB), one time only")
-        models.fetch()
+        try:
+            models.fetch()
+        except models.ModelIntegrityError as error:
+            print(f"install-service: {error}", file=sys.stderr)
+            return 1
 
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(render_unit(exec_start, mode))
     _systemctl("daemon-reload")
     print(f"service: {path} -> {exec_start}")
+    link_on_path(exec_start)
 
     if enable:
         _systemctl("enable", "--now", UNIT_NAME)

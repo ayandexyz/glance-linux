@@ -107,14 +107,26 @@ python -m venv ~/.local/share/glance
 omarchy plugin add https://github.com/ayandexyz/omarchy-glance.git --enable
 ```
 
-The lock is generated for CPython 3.14 on x86_64 Linux, which is what Omarchy
-ships; regenerate it for anything else, because the wheels and so the hashes
-differ:
+The lock is generated for CPython 3.14, which is what Omarchy ships. Locks
+written with `tools/mklock.py` cover x86_64 and aarch64 in one file: each
+package is pinned to one version and to the hash of every Linux wheel of it
+that 3.14 can install on either architecture, and a package only one of them
+needs (MediaPipe) carries a `platform_machine` marker. It resolves each
+architecture with uv, so markers are evaluated for the target rather than for
+the machine running it:
 
 ```bash
-python -m pip install --dry-run --ignore-installed \
-    --report report.json 'glanced[runtime,gui]==0.3.9'
+tools/mklock.py make -r 'glanced[runtime,gui]==X.Y.Z' -c packaging/glanced-<previous>.lock \
+    -o packaging/glanced-X.Y.Z.lock        # -c keeps the previous versions where it can
+tools/mklock.py verify packaging/glanced-X.Y.Z.lock   # every hash PyPI's, no wheel missing
 ```
+
+On Linux aarch64 (Apple Silicon Macs under Asahi Linux, ARM laptops)
+MediaPipe has no wheel, so it is not installed there and the landmarker runs
+the same BlazeFace and Face Mesh networks on onnxruntime instead
+(`glanced/landmarker_onnx.py`, measured against MediaPipe's own output in
+`tests/test_landmarker_onnx.py`). `fetch-model` picks the matching files by
+itself; `GLANCE_LANDMARKER=onnx` tries that backend on x86_64 too.
 
 `pipx install 'glanced[runtime,gui]'` is still a perfectly ordinary way to
 install this, and puts `glancectl` on your PATH. It resolves the dependency
@@ -140,7 +152,9 @@ that step.
 
 `install-service` fetches the models if they are missing and writes the same
 unit `packaging/install.sh` does, pointed at the `glancectl` that is running
-it, so it works from pipx, a venv or a checkout. `--no-fetch` skips the
+it, so it works from pipx, a venv or a checkout. It also links that `glancectl` into
+`~/.local/bin` (or `$XDG_BIN_HOME`), so the venv's binary answers at a prompt;
+an existing `glancectl` there that is not a link to it is left alone. `--no-fetch` skips the
 download; `--remove` takes the whole thing back out.
 
 An AUR package is written and waiting in `packaging/aur/` — the PKGBUILD and
@@ -160,9 +174,15 @@ For hacking on it, or to run the tests:
 ```bash
 python -m venv .venv && .venv/bin/pip install -e '.[runtime,gui,dev]'
 .venv/bin/python -m pytest                   # no camera needed
-.venv/bin/glancectl fetch-model              # ~3MB landmarker + ~13MB ArcFace
+.venv/bin/glancectl fetch-model              # ~3MB landmarker + ~13MB ArcFace, sha256-pinned
 .venv/bin/glancectl live --mode heavy        # liveness against your webcam, no unlock
 ```
+
+The camera is the first V4L2 node that captures video, skipping hardware
+codecs and metadata nodes; on an Apple Silicon Mac under Asahi that is
+`/dev/video1`, because `/dev/video0` is the video decoder. Set
+`GLANCE_DEVICE=/dev/videoN` (in the environment, or in the service with
+`systemctl --user edit glanced`) or pass `--device` to pick another one.
 
 Then the real thing:
 
