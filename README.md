@@ -93,7 +93,7 @@ the shell's own lock have, but one you should read before relying on it.
 ## Install by hand
 
 What the installer does, step by step: from PyPI, into a venv built from
-`packaging/glanced-0.3.9.lock`. That file pins every package in the dependency set -- all 30, `glanced` itself included
+`packaging/glanced-0.4.0.lock`. That file pins every package in the dependency set -- all 30, `glanced` itself included
 -- to one exact version and one exact SHA-256, and pip runs in hash-checking
 mode over the whole of it, so a substituted artifact fails the install instead
 of silently replacing the code the daemon runs. Wiring the lock screen
@@ -102,7 +102,7 @@ compiles a small PAM module, so `base-devel` and `pam` need to be there --
 
 ```bash
 python -m venv ~/.local/share/glance
-~/.local/share/glance/bin/pip install --require-hashes -r packaging/glanced-0.3.9.lock
+~/.local/share/glance/bin/pip install --require-hashes -r packaging/glanced-0.4.0.lock
 ~/.local/share/glance/bin/glancectl setup   # models, service, PAM, lock indicator
 omarchy plugin add https://github.com/ayandexyz/omarchy-glance.git --enable
 ```
