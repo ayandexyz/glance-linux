@@ -1,5 +1,45 @@
 # Changelog
 
+## 0.4.0 — 2026-10-22
+
+### Added
+- `glanced` now runs on Linux aarch64, including Apple Silicon Macs under
+  Asahi Linux. MediaPipe ships no aarch64 wheel, so the landmarker gained a
+  second backend, `onnxruntime`, that runs the same two networks
+  (`src/glanced/landmarker_onnx.py`): BlazeFace and Face Mesh V2, converted
+  unchanged from TFLite to ONNX, with MediaPipe's graph logic ported to numpy
+  rule for rule. MediaPipe stays the default wherever it's installed (every
+  existing x86_64 install); `$GLANCE_LANDMARKER=mediapipe|onnx` forces one.
+  The onnx backend's two model files are published as this repository's
+  `models-v1` release and pinned by SHA-256 like everything else.
+- The camera now drains frames on a reader thread instead of blocking on
+  `grab()`, so a V4L2 driver that stops delivering when the consumer falls
+  behind (the Apple ISP driver behind the FaceTime HD camera on Apple
+  Silicon) no longer stalls a HEAVY liveness scan.
+- The default capture device is found by asking each `/dev/videoN` what it
+  is (`VIDIOC_QUERYCAP`) instead of assuming `/dev/video0`, which on Asahi is
+  the `avd` hardware decoder, not the camera. `$GLANCE_DEVICE`/`--device`
+  still override.
+- Every model (`face_landmarker.task`, both ArcFace variants, and the two
+  onnx networks) is now pinned to a SHA-256, verified on every load; a file
+  that doesn't match is refused with a clear error instead of loaded.
+  `fetch-model --from DIR` (or `$GLANCE_MODEL_SOURCE`) installs from a local
+  copy for offline machines and packagers.
+- `glancectl setup`/`install-service` link `glancectl` into `~/.local/bin`
+  (or `$XDG_BIN_HOME`) for a locked install, so `glancectl enroll` works at a
+  prompt without the venv on PATH.
+- `setup-lock` now patches the Omarchy lock plugin the running shell actually
+  loads (`$OMARCHY_PATH`, else the running quickshell process's own, else
+  `/usr/share/omarchy`), not just the package-owned copy, fixing installs
+  where the shell runs from a checkout.
+- `tools/mklock.py` generates a lock with hashes for both x86_64 and
+  aarch64 wheels, merging per-architecture resolutions from
+  `uv pip compile --python-platform` with a `platform_machine` marker where
+  they differ (e.g. `mediapipe`, x86_64 only). `verify` checks a lock against
+  PyPI.
+
+Thanks to Ike Kavas for the Apple Silicon / Asahi Linux port (#15).
+
 ## 0.3.9 — 2026-10-22
 
 ### Added
