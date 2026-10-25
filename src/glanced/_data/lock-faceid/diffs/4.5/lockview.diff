@@ -19,7 +19,7 @@
  
    readonly property string placeholderText: Commons.I18n.t("lock.enterPassword")
    readonly property int fieldWidth: 381
-@@ -152,6 +164,29 @@
+@@ -152,6 +164,31 @@
        onPositionChanged: root.wakeRequested()
      }
  
@@ -38,8 +38,10 @@
 +      anchors.bottom: inputField.top
 +      anchors.bottomMargin: 18
 +      anchors.horizontalCenter: inputField.horizontalCenter
-+      visible: root.faceUnlockAvailable && root.faceState !== "scanning" && !root.facePasswordPrompt
-+      text: Commons.I18n.t("lock.faceUnlockHint", "Press Enter to unlock with your face")
++      visible: root.faceUnlockAvailable && root.faceState !== "scanning" && root.passwordText.length === 0
++      text: root.facePasswordPrompt
++        ? Commons.I18n.t("lock.faceUnlockRetryHint", "Press Enter to try your face again")
++        : Commons.I18n.t("lock.faceUnlockHint", "Press Enter to unlock with your face")
 +      color: Commons.Color.lock.placeholder
 +      font.family: Style.font.family
 +      font.pixelSize: Style.font.heading
@@ -49,7 +51,7 @@
      BorderSurface {
        id: inputField
        width: root.fieldWidth
-@@ -204,7 +239,10 @@
+@@ -204,7 +241,10 @@
          onAccepted: {
            var submitted = root.passwordText
            root.passwordTextEdited("")

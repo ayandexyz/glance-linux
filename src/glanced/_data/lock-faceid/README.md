@@ -39,9 +39,10 @@ So the patch does two things about that:
   faceAutoStart off` turns it off.
 - **Enter on an empty field asks for the scan.** The field does not have to
   hold a password for the camera to open. A line under the field says so,
-  while the PAM stack really carries the module — and it goes away as soon as
-  PAM is waiting for a password, because by then the field wants a password
-  and not another scan.
+  while the PAM stack really carries the module. After a scan that missed, the
+  same Enter asks for another one (the line then reads "Press Enter to try
+  your face again"). The line goes away while a scan is running and while
+  something is typed in the field.
 
 ## How it knows a scan is happening
 

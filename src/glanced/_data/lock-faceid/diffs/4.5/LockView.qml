@@ -179,8 +179,10 @@ Item {
       anchors.bottom: inputField.top
       anchors.bottomMargin: 18
       anchors.horizontalCenter: inputField.horizontalCenter
-      visible: root.faceUnlockAvailable && root.faceState !== "scanning" && !root.facePasswordPrompt
-      text: Commons.I18n.t("lock.faceUnlockHint", "Press Enter to unlock with your face")
+      visible: root.faceUnlockAvailable && root.faceState !== "scanning" && root.passwordText.length === 0
+      text: root.facePasswordPrompt
+        ? Commons.I18n.t("lock.faceUnlockRetryHint", "Press Enter to try your face again")
+        : Commons.I18n.t("lock.faceUnlockHint", "Press Enter to unlock with your face")
       color: Commons.Color.lock.placeholder
       font.family: Style.font.family
       font.pixelSize: Style.font.heading
