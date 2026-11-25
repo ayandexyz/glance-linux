@@ -114,8 +114,24 @@ class _PairSample:
     motion: float
 
 
+def _frame_region_points(frame: LivenessFrame) -> dict[LandmarkRegion, np.ndarray]:
+    """Index a frame's landmarks by region once so multi-pair window evaluation
+    does not re-filter and re-sort the same frame on every pair."""
+    grouped: dict[LandmarkRegion, list[tuple[int, float, float]]] = {}
+    for p in frame.landmarks:
+        grouped.setdefault(p.region, []).append((p.index_in_region, p.x, p.y))
+    result: dict[LandmarkRegion, np.ndarray] = {}
+    for region, pts in grouped.items():
+        pts.sort(key=lambda item: item[0])
+        result[region] = np.array([(x, y) for _, x, y in pts], dtype=float)
+    return result
+
+
 def _corresponding_points(
-    a: LivenessFrame, b: LivenessFrame
+    a: LivenessFrame,
+    b: LivenessFrame,
+    a_regions: Optional[dict[LandmarkRegion, np.ndarray]] = None,
+    b_regions: Optional[dict[LandmarkRegion, np.ndarray]] = None,
 ) -> dict[LandmarkRegion, tuple[np.ndarray, np.ndarray]]:
     """Points present, with matching per-region counts, in both frames.
 
@@ -125,9 +141,9 @@ def _corresponding_points(
     """
     result: dict[LandmarkRegion, tuple[np.ndarray, np.ndarray]] = {}
     for region in ALL_REGIONS:
-        pa = a.points_of(region)
-        pb = b.points_of(region)
-        if len(pa) == 0 or len(pa) != len(pb):
+        pa = a_regions.get(region) if a_regions is not None else a.points_of(region)
+        pb = b_regions.get(region) if b_regions is not None else b.points_of(region)
+        if pa is None or pb is None or len(pa) == 0 or len(pa) != len(pb):
             continue
         result[region] = (pa, pb)
     return result
@@ -149,14 +165,19 @@ def _flatten(
     return np.vstack(src_parts), np.vstack(dst_parts)
 
 
-def _pair_geometry(a: LivenessFrame, b: LivenessFrame) -> Optional[_PairSample]:
+def _pair_geometry(
+    a: LivenessFrame,
+    b: LivenessFrame,
+    a_regions: Optional[dict[LandmarkRegion, np.ndarray]] = None,
+    b_regions: Optional[dict[LandmarkRegion, np.ndarray]] = None,
+) -> Optional[_PairSample]:
     if not (a.has_reliable_landmarks and b.has_reliable_landmarks):
         return None
     iod = b.interocular_distance
     if iod is None or iod <= 0:
         return None
 
-    matched = _corresponding_points(a, b)
+    matched = _corresponding_points(a, b, a_regions, b_regions)
     fit_src, fit_dst = _flatten(matched, FIT_REGIONS)
     probe_src, probe_dst = _flatten(matched, PROBE_REGIONS)
     eye_src, eye_dst = _flatten(
@@ -306,8 +327,12 @@ def evaluate(
     rejected = 0
     skipped_for_motion = 0
 
+    region_cache: list[Optional[dict[LandmarkRegion, np.ndarray]]] = [
+        _frame_region_points(f) if f.has_reliable_landmarks else None for f in window
+    ]
+
     for i, j, weight in _pair_indices(len(window)):
-        sample = _pair_geometry(window[i], window[j])
+        sample = _pair_geometry(window[i], window[j], region_cache[i], region_cache[j])
         if sample is None:
             rejected += 1
             continue
