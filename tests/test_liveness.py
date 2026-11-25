@@ -60,6 +60,18 @@ def test_robust_homography_ignores_one_wild_outlier():
     assert residual.max() < 1.0, "an outlier pulled the plane fit around"
 
 
+def test_homography_rejects_degenerate_and_underweighted_inputs():
+    collinear = np.array([[0.0, 0.0], [10.0, 0.0], [20.0, 0.0], [30.0, 0.0]])
+    assert solve_homography(collinear, collinear) is None
+
+    src = np.array([[0.0, 0.0], [100.0, 0.0], [100.0, 80.0], [0.0, 80.0], [50.0, 40.0]])
+    dst = src * 1.1 + np.array([5.0, -3.0])
+    assert solve_homography(src, dst, weights=np.array([1.0, 1.0, 1.0, 0.0, -1.0])) is None
+    fitted = solve_homography(src, dst, weights=np.array([1.0, 1.0, 1.0, 1.0, 0.0]))
+    assert fitted is not None
+    np.testing.assert_allclose(fitted.apply(src), dst, atol=1e-6)
+
+
 # --- flat vs 3D -------------------------------------------------------------
 
 

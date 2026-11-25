@@ -11,10 +11,13 @@ All of it operates in top-left / y-down pixel space.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import Optional, Sequence
 
 import numpy as np
+
+_SQRT2 = math.sqrt(2.0)
 
 
 @dataclass(frozen=True)
@@ -41,13 +44,18 @@ class Homography:
         pts = np.asarray(points, dtype=float).reshape(-1, 2)
         if pts.size == 0:
             return pts
-        homo = np.hstack([pts, np.ones((len(pts), 1))])
-        out = homo @ self.m.T
-        w = out[:, 2]
+        m = self.m
+        px = pts[:, 0]
+        py = pts[:, 1]
+        w = m[2, 0] * px + m[2, 1] * py + m[2, 2]
         degenerate = np.abs(w) <= 1e-12
         safe_w = np.where(degenerate, 1.0, w)
-        mapped = out[:, :2] / safe_w[:, None]
-        mapped[degenerate] = pts[degenerate]
+        inv_w = 1.0 / safe_w
+        mx = (m[0, 0] * px + m[0, 1] * py + m[0, 2]) * inv_w
+        my = (m[1, 0] * px + m[1, 1] * py + m[1, 2]) * inv_w
+        mapped = np.empty_like(pts)
+        mapped[:, 0] = np.where(degenerate, px, mx)
+        mapped[:, 1] = np.where(degenerate, py, my)
         return mapped
 
 
@@ -77,6 +85,183 @@ def _apply_normalization(points: np.ndarray, t: tuple[float, float, float]) -> n
     return np.column_stack([scale * (points[:, 0] - cx), scale * (points[:, 1] - cy)])
 
 
+def _solve_8x8(ata: list[list[float]], atb: list[float]) -> Optional[list[float]]:
+    """Gaussian elimination with partial pivoting for the 8x8 normal equations,
+    falling back to ``numpy.linalg.solve`` for near-singular pivots (< 1e-12) so
+    marginal systems keep LAPACK conditioning without paying LAPACK dispatch
+    overhead on the well-conditioned common path."""
+    a = [row[:] for row in ata]
+    b = atb[:]
+    for col in range(8):
+        piv = col
+        best = abs(a[col][col])
+        for row in range(col + 1, 8):
+            v = abs(a[row][col])
+            if v > best:
+                best = v
+                piv = row
+        if best <= 1e-12 or not math.isfinite(best):
+            try:
+                sol = np.linalg.solve(np.array(ata, dtype=float), np.array(atb, dtype=float))
+            except np.linalg.LinAlgError:
+                return None
+            if not np.all(np.isfinite(sol)):
+                return None
+            return sol.tolist()
+        if piv != col:
+            a[col], a[piv] = a[piv], a[col]
+            b[col], b[piv] = b[piv], b[col]
+        row_c = a[col]
+        diag = row_c[col]
+        bc = b[col]
+        for row in range(col + 1, 8):
+            row_r = a[row]
+            factor = row_r[col] / diag
+            if factor:
+                for k in range(col + 1, 8):
+                    row_r[k] -= factor * row_c[k]
+                b[row] -= factor * bc
+
+    x = [0.0] * 8
+    for row in range(7, -1, -1):
+        s = b[row]
+        row_r = a[row]
+        for k in range(row + 1, 8):
+            s -= row_r[k] * x[k]
+        val = s / row_r[row]
+        if not math.isfinite(val):
+            return None
+        x[row] = val
+    return x
+
+
+def _normalize_points_list(
+    pts: list[list[float]],
+) -> Optional[tuple[tuple[float, float, float], list[tuple[float, float]]]]:
+    n = len(pts)
+    if n == 0:
+        return None
+    cx = sum(p[0] for p in pts) / n
+    cy = sum(p[1] for p in pts) / n
+    mean_dist = sum(math.hypot(p[0] - cx, p[1] - cy) for p in pts) / n
+    if mean_dist <= 1e-8 or not math.isfinite(mean_dist):
+        return None
+    scale = _SQRT2 / mean_dist
+    normed = [(scale * (p[0] - cx), scale * (p[1] - cy)) for p in pts]
+    return (scale, cx, cy), normed
+
+
+def _solve_normalized_dlt(
+    ns: list[tuple[float, float]],
+    nd: list[tuple[float, float]],
+    weights: Optional[Sequence[float]],
+    src_t: tuple[float, float, float],
+    dst_t: tuple[float, float, float],
+) -> Optional[tuple[float, float, float, float, float, float, float, float, float]]:
+    """Accumulate ``A^T W A`` and ``A^T W b`` directly for the 8-DOF DLT
+    equations (h33 = 1) and denormalize into 9 flat row-major entries."""
+    sw = sx = sy = sxx = sxy = syy = 0.0
+    sux = suy = su = svx = svy = sv = 0.0
+    suxx = suxy = suyy = svxx = svxy = svyy = 0.0
+    s66 = s67 = s77 = rhs6 = rhs7 = 0.0
+    kept = 0
+
+    for i in range(len(ns)):
+        if weights is None:
+            w = 1.0
+        else:
+            w = float(weights[i])
+            if not (w > 0.0):
+                continue
+        kept += 1
+        x, y = ns[i]
+        u, v = nd[i]
+        wx = w * x
+        wy = w * y
+        sw += w
+        sx += wx
+        sy += wy
+        sxx += wx * x
+        sxy += wx * y
+        syy += wy * y
+
+        wu = w * u
+        wv = w * v
+        wux = wu * x
+        wuy = wu * y
+        wvx = wv * x
+        wvy = wv * y
+        su += wu
+        sux += wux
+        suy += wuy
+        sv += wv
+        svx += wvx
+        svy += wvy
+
+        suxx += wux * x
+        suxy += wux * y
+        suyy += wuy * y
+        svxx += wvx * x
+        svxy += wvx * y
+        svyy += wvy * y
+
+        s66 += wux * u * x + wvx * v * x
+        s67 += wux * u * y + wvx * v * y
+        s77 += wuy * u * y + wvy * v * y
+        rhs6 -= wux * u + wvx * v
+        rhs7 -= wuy * u + wvy * v
+
+    if kept < 4:
+        return None
+
+    ata = [
+        [sxx, sxy, sx, 0.0, 0.0, 0.0, -suxx, -suxy],
+        [sxy, syy, sy, 0.0, 0.0, 0.0, -suxy, -suyy],
+        [sx, sy, sw, 0.0, 0.0, 0.0, -sux, -suy],
+        [0.0, 0.0, 0.0, sxx, sxy, sx, -svxx, -svxy],
+        [0.0, 0.0, 0.0, sxy, syy, sy, -svxy, -svyy],
+        [0.0, 0.0, 0.0, sx, sy, sw, -svx, -svy],
+        [-suxx, -suxy, -sux, -svxx, -svxy, -svx, s66, s67],
+        [-suxy, -suyy, -suy, -svxy, -svyy, -svy, s67, s77],
+    ]
+    atb = [sux, suy, su, svx, svy, sv, rhs6, rhs7]
+    h = _solve_8x8(ata, atb)
+    if h is None:
+        return None
+
+    s1, cx1, cy1 = src_t
+    s2, cx2, cy2 = dst_t
+    inv_s2 = 1.0 / s2
+    h0, h1, h2, h3, h4, h5, h6, h7 = h
+    t00 = inv_s2 * h0 + cx2 * h6
+    t01 = inv_s2 * h1 + cx2 * h7
+    t02 = inv_s2 * h2 + cx2
+    t10 = inv_s2 * h3 + cy2 * h6
+    t11 = inv_s2 * h4 + cy2 * h7
+    t12 = inv_s2 * h5 + cy2
+    tx1 = -s1 * cx1
+    ty1 = -s1 * cy1
+    return (
+        t00 * s1,
+        t01 * s1,
+        t00 * tx1 + t01 * ty1 + t02,
+        t10 * s1,
+        t11 * s1,
+        t10 * tx1 + t11 * ty1 + t12,
+        h6 * s1,
+        h7 * s1,
+        h6 * tx1 + h7 * ty1 + 1.0,
+    )
+
+
+def _homography_from_flat(
+    m: tuple[float, float, float, float, float, float, float, float, float]
+) -> Homography:
+    return Homography(
+        m=np.array([[m[0], m[1], m[2]], [m[3], m[4], m[5]], [m[6], m[7], m[8]]], dtype=float)
+    )
+
+
 def solve_homography(
     source: np.ndarray,
     destination: np.ndarray,
@@ -88,64 +273,34 @@ def solve_homography(
     Needs at least 4 correspondences; 6+ is the practical floor used by callers
     so the fit is overdetermined.
 
-    Deviation from the Swift, which hand-rolls Gaussian elimination with
-    partial pivoting and returns nil when the largest pivot falls under 1e-12:
-    the 8x8 solve here goes through ``numpy.linalg.solve``. The failure
-    condition is preserved rather than dropped — a singular system raises and
-    is caught, and a non-finite solution is rejected — but numpy's LAPACK path
-    is better conditioned than the direct elimination, so marginal systems that
-    the Swift declines may solve here.
+    Normal equations are accumulated directly from the normalized points and
+    solved with partial-pivoting Gaussian elimination (falling back to
+    ``numpy.linalg.solve`` when a pivot drops below ``1e-12``), avoiding the
+    per-call temporary matrix allocations of assembling ``A`` and ``b`` as
+    NumPy stacks while preserving LAPACK conditioning on marginal systems.
     """
     src = np.asarray(source, dtype=float).reshape(-1, 2)
     dst = np.asarray(destination, dtype=float).reshape(-1, 2)
     if len(src) != len(dst) or len(src) < 4:
         return None
+    w_list: Optional[list[float]] = None
     if weights is not None:
-        weights = np.asarray(weights, dtype=float)
-        if len(weights) != len(src):
+        w_arr = np.asarray(weights, dtype=float)
+        if len(w_arr) != len(src):
             return None
+        w_list = w_arr.tolist()
 
-    src_t = _normalizing_transform(src)
-    dst_t = _normalizing_transform(dst)
-    if src_t is None or dst_t is None:
+    norm_src = _normalize_points_list(src.tolist())
+    norm_dst = _normalize_points_list(dst.tolist())
+    if norm_src is None or norm_dst is None:
         return None
+    src_t, ns = norm_src
+    dst_t, nd = norm_dst
 
-    ns = _apply_normalization(src, src_t)
-    nd = _apply_normalization(dst, dst_t)
-
-    # sqrt of the weight, so that accumulating A^T A applies the weight itself.
-    w = np.ones(len(ns)) if weights is None else np.sqrt(np.clip(weights, 0.0, None))
-    keep = w > 0
-    if keep.sum() < 4:
+    flat = _solve_normalized_dlt(ns, nd, w_list, src_t, dst_t)
+    if flat is None:
         return None
-    ns, nd, w = ns[keep], nd[keep], w[keep]
-
-    x, y = ns[:, 0], ns[:, 1]
-    u, v = nd[:, 0], nd[:, 1]
-    zero = np.zeros_like(x)
-    one = np.ones_like(x)
-
-    # Two DLT rows per correspondence, h33 fixed at 1:
-    #   [x y 1 0 0 0 -u x -u y] . h = u
-    #   [0 0 0 x y 1 -v x -v y] . h = v
-    row0 = np.column_stack([x, y, one, zero, zero, zero, -u * x, -u * y]) * w[:, None]
-    row1 = np.column_stack([zero, zero, zero, x, y, one, -v * x, -v * y]) * w[:, None]
-    a = np.vstack([row0, row1])
-    b = np.concatenate([u * w, v * w])
-
-    ata = a.T @ a
-    atb = a.T @ b
-    try:
-        h = np.linalg.solve(ata, atb)
-    except np.linalg.LinAlgError:
-        return None
-    if not np.all(np.isfinite(h)):
-        return None
-
-    h_norm = np.array(
-        [[h[0], h[1], h[2]], [h[3], h[4], h[5]], [h[6], h[7], 1.0]], dtype=float
-    )
-    return _denormalize(h_norm, src_t, dst_t)
+    return _homography_from_flat(flat)
 
 
 def _denormalize(
@@ -172,25 +327,60 @@ def solve_robust_homography(
     """
     src = np.asarray(source, dtype=float).reshape(-1, 2)
     dst = np.asarray(destination, dtype=float).reshape(-1, 2)
-    current = solve_homography(src, dst)
+    n = len(src)
+    if n != len(dst) or n < 4:
+        return None
+
+    src_list = src.tolist()
+    dst_list = dst.tolist()
+    norm_src = _normalize_points_list(src_list)
+    norm_dst = _normalize_points_list(dst_list)
+    if norm_src is None or norm_dst is None:
+        return None
+    src_t, ns = norm_src
+    dst_t, nd = norm_dst
+
+    current = _solve_normalized_dlt(ns, nd, None, src_t, dst_t)
     if current is None:
         return None
 
+    mid = n // 2
     for _ in range(2):
-        residuals = np.hypot(*(dst - current.apply(src)).T)
-        scale = max(median_value(residuals), 1e-4)
-        cutoff = 4.685 * 1.4826 * scale
-        u = residuals / cutoff
-        t = 1.0 - u * u
-        weights = np.where(u >= 1.0, 0.0, t * t)
+        h0, h1, h2, h3, h4, h5, h6, h7, h8 = current
+        residuals: list[float] = []
+        for (px, py), (dx, dy) in zip(src_list, dst_list):
+            w = h6 * px + h7 * py + h8
+            if abs(w) <= 1e-12:
+                mx, my = px, py
+            else:
+                mx = (h0 * px + h1 * py + h2) / w
+                my = (h3 * px + h4 * py + h5) / w
+            residuals.append(math.hypot(dx - mx, dy - my))
+
+        sres = sorted(residuals)
+        med = sres[mid] if n % 2 else 0.5 * (sres[mid - 1] + sres[mid])
+        scale = max(med, 1e-4)
+        inv_cutoff = 1.0 / (4.685 * 1.4826 * scale)
+        weights: Optional[list[float]] = []
+        survivors = 0
+        for r in residuals:
+            u = r * inv_cutoff
+            if u >= 1.0:
+                weights.append(0.0)
+            else:
+                t = 1.0 - u * u
+                wt = t * t
+                weights.append(wt)
+                if wt > 0.0:
+                    survivors += 1
         # Too few survivors to constrain 8 DOF: fall back to an unweighted fit
         # rather than solving an underdetermined system on the remnant.
-        if int(np.count_nonzero(weights > 0)) < 6:
-            weights = np.ones(len(src))
-        refined = solve_homography(src, dst, weights)
+        if survivors < 6:
+            weights = None
+        refined = _solve_normalized_dlt(ns, nd, weights, src_t, dst_t)
         if refined is not None:
             current = refined
-    return current
+    return _homography_from_flat(current)
 
 
 def solve_similarity_transform(
