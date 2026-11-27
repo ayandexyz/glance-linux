@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+- The lock screen indicator is rebased onto Omarchy 4.6 (`diffs/4.6/`).
+  Neither the 4.5 nor the 4.0 diff set applies to 4.6's lock plugin, so
+  `apply.sh` left 4.6 on the stock lock screen. 4.6 made the password
+  `PamContext` settle each attempt once: `onCompleted`/`onError` return early
+  when `authenticatingPassword` is already false, and
+  `handlePasswordFailure()` only counts a failure while it is still true. The
+  face wiring now keeps that guard and no longer clears
+  `authenticatingPassword` before calling `handlePasswordFailure()`, which
+  would have made every missed scan or wrong password go uncounted. 4.0 and
+  4.5 still pick their own diff sets.
+
 ## 0.4.0 — 2026-10-22
 
 ### Added

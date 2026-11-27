@@ -1,0 +1,450 @@
+--- /usr/share/omarchy/shell/plugins/lock/Service.qml
++++ Service.qml
+@@ -61,6 +61,36 @@
+   readonly property bool videoBackground: Util.isVideoPath(backgroundPath)
+   property bool strandedLock: false
+   property bool strandedLockResolved: false
++  // Face unlock: a PAM module ahead of the password one (pam_glance, howdy)
++  // announces itself with an info message before it scans, and the
++  // conversation only reaches the password prompt if that scan failed. That
++  // is enough to drive the indicator without knowing anything about the
++  // module. hidden | scanning | success | failure.
++  property string faceState: "hidden"
++  property string faceMessage: ""
++  property bool faceAfterglow: false
++  property string faceAfterglowPhase: "hidden"
++  readonly property string faceMessagePrefix: "Glance:"
++  // A scan can finish in a few hundred milliseconds, before the pill has even
++  // arrived. Shown as it happens, that is a flash: no mark, no ring, a tick
++  // that is gone before it is read. A success is held back until this much
++  // time has passed since the scan began — enough for the slide, the growth,
++  // the mark's beat and a moment of the ring. It costs a fast scan under a
++  // second and costs a slow one nothing. Set to 0 to unlock the instant PAM
++  // answers.
++  readonly property int faceMinScanMs: 1400
++  property double faceScanStartedAt: 0
++  // Whether the lock's own PAM stack carries the face module. The stack file
++  // says so, and the stack file is what decides — so the hint under the
++  // field only appears when there is something behind it.
++  property bool faceUnlockAvailable: false
++  // Whether the scan starts by itself when the screen locks, or only when
++  // the user asks for it with Enter.
++  property bool faceAutoStart: true
++  // Whether PAM is waiting for a password. It is, once the scan has had its
++  // turn and did not recognise anyone — and then the field wants a password,
++  // not another scan, so the hint that promises one is taken away.
++  property bool facePasswordPrompt: false
+ 
+   readonly property bool locked: lockRequested || sessionLock.locked || sessionLock.secure
+ 
+@@ -190,12 +220,126 @@
+     console.log("omarchy lock " + lastEventAt + " " + event)
+   }
+ 
++  function beginFaceScan() {
++    faceState = "scanning"
++    faceMessage = ""
++    facePasswordPrompt = false
++    faceScanStartedAt = Date.now()
++    faceHideTimer.stop()
++    faceUnlockTimer.stop()
++    faceSuccessTimer.stop()
++  }
++
++  // The scan did not unlock: PAM moved on to the password prompt, or the
++  // whole conversation failed. Show the miss briefly, then get out of the way.
++  function faceScanMissed() {
++    dropAfterglow()
++    if (faceState !== "scanning") return
++    faceState = "failure"
++    faceHideTimer.restart()
++  }
++
++  // PAM has said yes. Let the pill finish arriving before it is told.
++  function faceScanSucceeded() {
++    var wait = faceMinScanMs - (Date.now() - faceScanStartedAt)
++    if (wait > 0) {
++      faceSuccessTimer.interval = wait
++      faceSuccessTimer.restart()
++      return
++    }
++    showFaceSuccess()
++  }
++
++  // Hold the success frame for a beat before the lock drops, or the check
++  // mark is never seen.
++  function showFaceSuccess() {
++    faceState = "success"
++    faceHideTimer.stop()
++    beginAfterglow()
++    faceUnlockTimer.restart()
++  }
++
++  // --- the unlock afterglow -------------------------------------------
++  //
++  // The lock surface is destroyed the instant the session unlocks, taking the
++  // indicator with it — so the check mark would disappear at exactly the
++  // moment it is doing its job, and the unlock would end on a blink. This
++  // layer-shell window carries the same capsule, at the same place, across
++  // that boundary: raised just before the lock drops, and left on the desktop
++  // for a beat afterwards.
++  //
++  // It takes no keyboard focus and passes every click straight through, so it
++  // cannot get between the user and the session it has just handed back.
++  // Raised at the verdict, not at the unlock. A layer-shell window is not on
++  // screen when it is asked for — it has to be created, configured and
++  // painted, measured here at 60-230ms — while the lock surface is destroyed
++  // in the same turn as the request. Raising it at the unlock therefore leaves
++  // a stretch with neither on screen, which reads as the capsule vanishing and
++  // popping back.
++  //
++  // A session lock surface renders above every layer-shell layer, so a window
++  // raised now stays invisible until the lock drops and reveals it, already
++  // painted and in place. Should a compositor ever show it early, what appears
++  // is the same capsule at the same position, so there is still nothing to
++  // see.
++  function beginAfterglow() {
++    faceAfterglow = true
++    faceAfterglowPhase = "success"
++  }
++
++  // The beat on the desktop is measured from when the lock actually goes, not
++  // from when the window was raised.
++  function holdAfterglow() {
++    afterglowHoldTimer.restart()
++  }
++
++  function endAfterglow() {
++    afterglowHoldTimer.stop()
++    faceAfterglowPhase = "hidden"   // slides up and fades
++    afterglowExitTimer.restart()
++  }
++
++  // Nothing half-faded may survive into a new lock.
++  function dropAfterglow() {
++    afterglowHoldTimer.stop()
++    afterglowExitTimer.stop()
++    faceAfterglowPhase = "hidden"
++    faceAfterglow = false
++  }
++
++  function clearFace() {
++    faceState = "hidden"
++    faceMessage = ""
++    facePasswordPrompt = false
++    faceHideTimer.stop()
++    faceUnlockTimer.stop()
++    faceSuccessTimer.stop()
++  }
++
++  function handlePamMessage() {
++    var text = String(passwordPam.message || "")
++    if (!passwordPam.responseRequired && text.indexOf(faceMessagePrefix) === 0) {
++      beginFaceScan()
++    } else if (passwordPam.responseRequired) {
++      // The scan is over and PAM wants a password. With nothing typed yet the
++      // field is handed back, so the password can be typed into it; with a
++      // password already typed it stays locked and says "Checking…" while
++      // PAM verifies it.
++      faceScanMissed()
++      facePasswordPrompt = true
++      if (pendingPassword.length === 0) authenticatingPassword = false
++    }
++    respondToPasswordPrompt()
++  }
++
+   function resetAuthenticationState() {
+     enteredPassword = ""
+     pendingPassword = ""
+     failureMessage = ""
+     failedAttempts = 0
+     authenticatingPassword = false
++    clearFace()
++    faceAutoStartTimer.stop()
+     fingerprintAuthenticating = false
+     fingerprintUnreachedStreak = 0
+     fingerprintAttemptFastError = false
+@@ -221,8 +365,12 @@
+     }
+ 
+     resetAuthenticationState()
++    dropAfterglow()
+     lockRequested = true
+     armBlankTimer()
++    // The scan is started by itself a beat later, once the lock is up: the
++    // camera is the first thing tried, and the password the second.
++    if (faceAutoStart) faceAutoStartTimer.restart()
+     logEvent("lock-requested")
+     queueSessionLock()
+ 
+@@ -355,13 +503,32 @@
+ 
+   function submitPassword(value) {
+     var password = String(value || "")
+-    if (!lockRequested || authenticatingPassword || password.length === 0) return
++    if (!lockRequested || authenticatingPassword) return
++
++    // The face scan has already opened a conversation and PAM is now asking
++    // for the password: answer that one. A second conversation would leave
++    // the first one waiting for an answer that never comes.
++    if (passwordPam.active && passwordPam.responseRequired) {
++      if (password.length === 0) return
++      runWake()
++      failureMessage = ""
++      pendingPassword = password
++      authenticatingPassword = true
++      passwordPam.respond(password)
++      return
++    }
+ 
+     runWake()
+-    pendingPassword = password
+     failureMessage = ""
++    pendingPassword = password
+     authenticatingPassword = true
++    startPasswordPam()
++  }
+ 
++  // Open the conversation. With an empty password this is the face scan,
++  // which the stack tries before the password one — so the field does not
++  // have to hold anything for the camera to open.
++  function startPasswordPam() {
+     if (!passwordPam.start()) {
+       handlePasswordFailure()
+       return
+@@ -370,8 +537,24 @@
+     Qt.callLater(respondToPasswordPrompt)
+   }
+ 
++  // The scan starts by itself a moment after the screen locks, so the
++  // session comes back without a password being typed. The display is left
++  // alone: it is locked, and it may be off.
++  function startFaceScan() {
++    if (!lockRequested || authenticatingPassword) return
++    if (passwordPam.active) return
++
++    failureMessage = ""
++    pendingPassword = ""
++    authenticatingPassword = true
++    startPasswordPam()
++  }
++
+   function respondToPasswordPrompt() {
+-    if (!authenticatingPassword || !passwordPam.active || !passwordPam.responseRequired) return
++    if (!passwordPam.active || !passwordPam.responseRequired) return
++    // Nothing typed yet: leave the prompt open. The scan has had its turn,
++    // and the password is the user's to type when they are ready for it.
++    if (pendingPassword.length === 0) return
+     passwordPam.respond(pendingPassword)
+   }
+ 
+@@ -523,6 +706,10 @@
+         inputEnabled: root.lockRequested
+         loadBackground: root.locked
+         passwordText: root.enteredPassword
++        faceState: root.faceState
++        faceMessage: root.faceMessage
++        faceUnlockAvailable: root.faceUnlockAvailable
++        facePasswordPrompt: root.facePasswordPrompt
+         onPasswordTextEdited: function(password) { root.enteredPassword = password }
+         onSubmitPassword: function(password) { root.submitPassword(password) }
+         onClearFailureRequested: root.failureMessage = ""
+@@ -533,6 +720,29 @@
+   }
+ 
+   PanelWindow {
++    id: afterglowWindow
++    visible: root.faceAfterglow
++    anchors { top: true; bottom: true; left: true; right: true }
++    color: "transparent"
++    WlrLayershell.namespace: "omarchy-lock-afterglow"
++    WlrLayershell.layer: WlrLayer.Overlay
++    WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
++    exclusionMode: ExclusionMode.Ignore
++    // Empty input region: the pointer never meets this window at all.
++    mask: Region {}
++
++    FaceUnlockIndicator {
++      phase: root.faceAfterglowPhase
++      message: root.faceMessage
++      // The same offset LockView gives it, so the capsule does not move by a
++      // pixel as it changes surfaces.
++      topMargin: Math.round(parent.height * 0.07)
++      animateEntry: false
++      overDesktop: true
++    }
++  }
++
++  PanelWindow {
+     id: previewWindow
+     // Right-to-left languages read this window mirrored.
+     Binding { target: previewWindow.contentItem; property: "LayoutMirroring.enabled"; value: Commons.I18n.rightToLeft }
+@@ -559,6 +769,10 @@
+       inputEnabled: false
+       loadBackground: root.previewVisible
+       passwordText: ""
++      faceState: root.faceState
++      faceMessage: root.faceMessage
++      faceUnlockAvailable: root.faceUnlockAvailable
++      facePasswordPrompt: root.facePasswordPrompt
+     }
+ 
+     MouseArea {
+@@ -573,8 +787,8 @@
+     config: "omarchy-lock-password"
+     user: root.userName
+ 
+-    onResponseRequiredChanged: root.respondToPasswordPrompt()
+-    onPamMessage: root.respondToPasswordPrompt()
++    onResponseRequiredChanged: root.handlePamMessage()
++    onPamMessage: root.handlePamMessage()
+ 
+     onCompleted: function(result) {
+       if (!root.authenticatingPassword) return
+@@ -584,19 +798,93 @@
+         return
+       }
+       if (result === PamResult.Success) {
+-        root.authenticatingPassword = false
+         root.pendingPassword = ""
++        // A face success: keep "Checking…" up and the display awake while the
++        // indicator shows its check mark; faceUnlockTimer finishes the unlock.
++        if (root.faceState === "scanning") {
++          root.faceScanSucceeded()
++          return
++        }
++        root.authenticatingPassword = false
+         root.finishUnlock()
+       } else {
++        // handlePasswordFailure() settles the attempt, and only while
++        // authenticatingPassword is still true, so it is not cleared first.
++        root.faceScanMissed()
+         root.handlePasswordFailure()
+       }
+     }
+ 
+     onError: function(error) {
++      if (!root.authenticatingPassword) return
++      root.faceScanMissed()
+       root.handlePasswordFailure()
+     }
+   }
+ 
++  // Long enough to read the check mark, short enough that the session does
++  // not feel withheld: the afterglow carries the rest of the confirmation on
++  // the far side of the unlock, where it costs the user nothing.
++  Timer {
++    id: faceUnlockTimer
++    interval: 550
++    repeat: false
++    onTriggered: {
++      root.authenticatingPassword = false
++      if (!root.lockRequested) {
++        root.dropAfterglow()
++        return
++      }
++      root.finishUnlock()
++      root.holdAfterglow()
++    }
++  }
++
++  Timer {
++    id: faceSuccessTimer
++    repeat: false
++    onTriggered: if (root.lockRequested && root.faceState === "scanning") root.showFaceSuccess()
++  }
++
++  // Long enough that the tick, which now arrives after the sphere's spin,
++  // is read on the desktop rather than glimpsed.
++  Timer {
++    id: afterglowHoldTimer
++    interval: 1200
++    repeat: false
++    onTriggered: root.endAfterglow()
++  }
++
++  Timer {
++    id: afterglowExitTimer
++    interval: 420  // covers the indicator's own exit transition
++    repeat: false
++    onTriggered: root.faceAfterglow = false
++  }
++
++  // Long enough that the miss registers, short enough that the pill is not
++  // still sulking over a password field that has already taken focus.
++  Timer {
++    id: faceHideTimer
++    interval: 1200
++    repeat: false
++    onTriggered: if (root.faceState === "failure") root.faceState = "hidden"
++  }
++
++  // The scan starts by itself a moment after the screen locks. Without it the
++  // user has to press Enter on the password field before the camera opens,
++  // which reads as "type your password, then the camera checks" — the face
++  // is the second step instead of the first.
++  Timer {
++    id: faceAutoStartTimer
++    interval: 900
++    repeat: false
++    onTriggered: {
++      if (!root.faceAutoStart) return
++      root.startFaceScan()
++    }
++  }
++
+   PamContext {
+     id: fingerprintPam
+     config: "omarchy-lock-fingerprint"
+@@ -877,7 +1165,12 @@
+     path: "/etc/pam.d/omarchy-lock-password"
+     watchChanges: true
+     printErrors: false
+-    onLoaded: root.passwordPamConfigured = true
++    onLoaded: {
++      root.passwordPamConfigured = true
++      // The stack file is what decides whether a scan happens at all, so it
++      // is also what decides whether the field promises one.
++      root.faceUnlockAvailable = text().indexOf("pam_glance.so") >= 0
++    }
+     onLoadFailed: root.passwordPamConfigured = false
+     onFileChanged: reload()
+   }
+@@ -926,6 +1219,9 @@
+         passwordPam: root.passwordPamConfigured,
+         fingerprint: root.fingerprintConfigured,
+         fingerprintUnavailable: root.fingerprintUnavailable,
++        faceAvailable: root.faceUnlockAvailable,
++        faceAutoStart: root.faceAutoStart,
++        faceState: root.faceState,
+         authenticating: root.authenticating,
+         lastEvent: root.lastEvent,
+         lastEventAt: root.lastEventAt
+@@ -943,5 +1239,27 @@
+       root.previewVisible = false
+       return "ok"
+     }
++
++    // Drive the face indicator on the preview surface, so the animation can
++    // be seen and tuned without locking: hidden | scanning | success | failure.
++    function previewFace(phase: string): string {
++      var next = String(phase || "hidden")
++      if (["hidden", "scanning", "success", "failure"].indexOf(next) < 0) return "unknown phase"
++      root.refreshBackground()
++      root.previewVisible = true
++      root.faceState = next
++      root.faceMessage = ""
++      return "ok"
++    }
++
++    // Whether the scan starts by itself when the screen locks. Off means the
++    // user asks for it: press Enter on the password field, empty or not.
++    function faceAutoStart(state: string): string {
++      var next = String(state || "").toLowerCase()
++      if (next === "on" || next === "true") root.faceAutoStart = true
++      else if (next === "off" || next === "false") root.faceAutoStart = false
++      else return "usage: faceAutoStart on|off"
++      return root.faceAutoStart ? "on" : "off"
++    }
+   }
+ }
